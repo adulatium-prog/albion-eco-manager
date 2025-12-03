@@ -9,27 +9,22 @@ import json
 from datetime import datetime
 
 # --- SÉCURITÉ : MOT DE PASSE ---
-# On vérifie si un mot de passe est défini dans les secrets
 if "app_password" in st.secrets:
     mot_de_passe_secret = st.secrets["app_password"]
-    
-    # On affiche une barre latérale pour se connecter
     input_password = st.sidebar.text_input("🔒 Mot de passe", type="password")
-    
     if input_password != mot_de_passe_secret:
-        st.sidebar.warning("Saisis le mot de passe pour accéder à l'outil.")
-        st.stop()  # <--- C'est ici que ça bloque tout le reste si le MDP est faux
+        st.sidebar.warning("Saisis le mot de passe pour accéder.")
+        st.stop()
 
 # --- CONFIGURATION ---
-# Mets le nom de ton vrai fichier ici
-NOM_DU_FICHIER_SHEET = "Test Albion" 
-# Mets le nom de l'onglet où tout est stocké
+NOM_DU_FICHIER_SHEET = "Test Albion" # Remplace par "arion plot"
 NOM_ONGLET = "Journal_App" 
 
-# --- FONCTION API (SCANNER) ---
+# --- FONCTION API (SERVEUR EUROPE) ---
 def get_albion_stats(pseudo):
     try:
-        url_search = f"https://gameinfo.albiononline.com/api/gameinfo/search?q={pseudo}"
+        # URL MODIFIÉE POUR LE SERVEUR EUROPE (gameinfo-fra)
+        url_search = f"https://gameinfo-fra.albiononline.com/api/gameinfo/search?q={pseudo}"
         headers = {'User-Agent': 'Mozilla/5.0'} 
         resp = requests.get(url_search, headers=headers)
         
@@ -42,9 +37,10 @@ def get_albion_stats(pseudo):
                 player_id = target['Id']
                 guild = target.get('GuildName', '')
                 
-                # 2ème requête pour la Fame Craft
-                url_stats = f"https://gameinfo.albiononline.com/api/gameinfo/players/{player_id}"
+                # URL MODIFIÉE POUR LE SERVEUR EUROPE
+                url_stats = f"https://gameinfo-fra.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
+                
                 craft_fame = 0
                 if resp_stats.status_code == 200:
                     stats_data = resp_stats.json()
@@ -57,35 +53,35 @@ def get_albion_stats(pseudo):
                     "Statut": "✅ OK"
                 }
             else:
-                return {"Pseudo": pseudo, "Statut": "❌ Introuvable", "Craft Fame": 0}
+                return {"Pseudo": pseudo, "Statut": "❌ Introuvable (EU)", "Craft Fame": 0}
         else:
             return {"Pseudo": pseudo, "Statut": "⚠️ Erreur API", "Craft Fame": 0}
     except Exception as e:
         return {"Pseudo": pseudo, "Statut": "Erreur", "Craft Fame": 0}
 
-# --- CONNEXION (HYBRIDE PC/CLOUD) ---
+# --- CONNEXION (HYBRIDE PC/CLOUD BLINDÉE) ---
 try:
-    # 1. Si on est sur le Cloud (Streamlit)
     if "gcp_service_account" in st.secrets:
-        # On récupère le contenu brut (texte)
         secret_content = st.secrets["gcp_service_account"]
-        # On le transforme de JSON (texte) vers Dictionnaire (Python)
+        secret_content = secret_content.strip() # Nettoyage préventif
         dict_secrets = json.loads(secret_content)
         gc = gspread.service_account_from_dict(dict_secrets)
-        
-    # 2. Si on est sur ton PC (Local)
     else:
         gc = gspread.service_account(filename='service_account.json')
         
     sh = gc.open(NOM_DU_FICHIER_SHEET)
     worksheet = sh.worksheet(NOM_ONGLET)
 
+except json.JSONDecodeError:
+    st.error("❌ Erreur Secrets : Le format JSON dans les secrets Streamlit est invalide.")
+    st.stop()
 except Exception as e:
     st.error(f"❌ Erreur de connexion : {e}")
     st.stop()
+
 # --- INTERFACE ---
 st.set_page_config(page_title="Albion Manager", page_icon="💰", layout="wide")
-st.title("🏹 Albion Economy Manager")
+st.title("🏹 Albion Economy Manager (EU Server)")
 
 tab1, tab2, tab3 = st.tabs(["✍️ Saisie", "📊 Analyse", "🔍 Scanner Droits"])
 
@@ -142,10 +138,10 @@ with tab2:
     except Exception as e:
         st.warning(f"Chargement... ({e})")
 
-# --- TAB 3 : SCANNER JSON ---
+# --- TAB 3 : SCANNER JSON (EU) ---
 with tab3:
-    st.subheader("🕵️ Scanner droits d'accès")
-    st.caption("Colle le code JSON des droits d'accès (celui avec les accolades { }).")
+    st.subheader("🕵️ Scanner droits d'accès (Serveur EU)")
+    st.caption("Colle le code JSON des droits d'accès.")
     
     col_input, col_result = st.columns([1, 2])
     
@@ -156,20 +152,27 @@ with tab3:
     if bouton_scan and raw_text:
         pseudos_a_scanner = []
         
-        # 1. ANALYSE DU TEXTE
         try:
+            # Nettoyage basique si l'utilisateur copie des trucs autour
+            raw_text = raw_text.strip()
+            if not raw_text.startswith("{"): 
+                st.error("Le texte doit commencer par une accolade {")
+                st.stop()
+
             data_json = json.loads(raw_text)
             for key in data_json.keys():
                 if key.startswith("Player:"):
                     nom = key.split(":", 1)[1]
                     pseudos_a_scanner.append(nom)
             
-            st.success(f"{len(pseudos_a_scanner)} joueurs trouvés. Scan en cours...")
-        except:
-            st.error("Format invalide. Colle bien tout le texte JSON.")
+            st.success(f"{len(pseudos_a_scanner)} joueurs trouvés. Scan sur Serveur EU en cours...")
+        except json.JSONDecodeError:
+            st.error("Format JSON invalide. Assure-toi d'avoir tout copié.")
+            st.stop()
+        except Exception as e:
+            st.error(f"Erreur de lecture : {e}")
             st.stop()
             
-        # 2. SCAN API
         resultats = []
         barre = st.progress(0)
         
@@ -181,7 +184,6 @@ with tab3:
         
         barre.empty()
         
-        # 3. RÉSULTAT
         with col_result:
             df_res = pd.DataFrame(resultats)
             st.dataframe(
