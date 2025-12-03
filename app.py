@@ -8,6 +8,18 @@ import time
 import json
 from datetime import datetime
 
+# --- SÉCURITÉ : MOT DE PASSE ---
+# On vérifie si un mot de passe est défini dans les secrets
+if "app_password" in st.secrets:
+    mot_de_passe_secret = st.secrets["app_password"]
+    
+    # On affiche une barre latérale pour se connecter
+    input_password = st.sidebar.text_input("🔒 Mot de passe", type="password")
+    
+    if input_password != mot_de_passe_secret:
+        st.sidebar.warning("Saisis le mot de passe pour accéder à l'outil.")
+        st.stop()  # <--- C'est ici que ça bloque tout le reste si le MDP est faux
+
 # --- CONFIGURATION ---
 # Mets le nom de ton vrai fichier ici
 NOM_DU_FICHIER_SHEET = "Test Albion" 
