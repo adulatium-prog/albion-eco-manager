@@ -8,7 +8,6 @@ import time
 import json
 import re
 from datetime import datetime
-import numpy as np # Nécessaire pour le calcul conditionnel rapide
 
 # --- SÉCURITÉ ---
 if "app_password" in st.secrets:
@@ -22,6 +21,9 @@ if "app_password" in st.secrets:
 NOM_DU_FICHIER_SHEET = "Arion Plot"
 NOM_ONGLET_JOURNAL = "Journal_App"
 NOM_ONGLET_REF = "Reference_Craft"
+
+# 🎯 CONFIGURATION DU SEUIL (4 Millions)
+SEUIL_FAME_MIN = 4000000 
 
 # --- FONCTIONS FORMATAGE ---
 def format_monetaire(valeur):
@@ -102,7 +104,7 @@ st.title("🏹 Albion Economy Manager (EU)")
 
 tab1, tab2, tab3 = st.tabs(["✍️ Saisie", "📊 Analyse", "🔍 Suivi Craft"])
 
-# --- TAB 1 : SAISIE (CORRIGÉE : POSITIF PARTOUT) ---
+# --- TAB 1 : SAISIE ---
 with tab1:
     st.subheader("Nouvelle Opération")
     with st.form("ajout"):
@@ -114,10 +116,7 @@ with tab1:
         montant = st.number_input("Montant", step=10000, format="%d")
         note = st.text_input("Note")
         if st.form_submit_button("Valider"):
-            # CORRECTION : On envoie le montant POSITIF dans tous les cas
             final = montant 
-            
-            # Format date FR
             date = datetime.now().strftime("%d/%m/%Y %H:%M")
             try:
                 worksheet.append_row([date, batiment, type_op, final, note])
@@ -125,41 +124,24 @@ with tab1:
                 st.cache_data.clear()
             except Exception as e: st.error(f"Erreur : {e}")
 
-# --- TAB 2 : ANALYSE (ADAPTÉE) ---
+# --- TAB 2 : ANALYSE ---
 with tab2:
     st.subheader("Tableau de bord")
     try:
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
-            
-            # --- CALCUL SPÉCIAL POUR PYTHON ---
-            # Comme tout est positif dans le Sheet, Python doit savoir quoi soustraire
-            # On crée une colonne temporaire 'Reel' pour les calculs du graphique
             if 'Montant' in df.columns and 'Type' in df.columns:
-                # Si Type contient "Dépense", on multiplie par -1, sinon on garde le montant
                 df['Reel'] = df.apply(lambda x: -x['Montant'] if "Dépense" in str(x['Type']) else x['Montant'], axis=1)
-                
                 total = df['Reel'].sum()
-                st.metric(
-                    label="💰 Trésorerie Totale", 
-                    value=f"{format_monetaire(total)} Silver",
-                    delta=f"{total:,.0f} (Global)"
-                )
-            else:
-                st.warning("Colonnes 'Montant' ou 'Type' manquantes.")
-                st.stop()
-
-            st.write("---")
+                st.metric(label="💰 Trésorerie Totale", value=f"{format_monetaire(total)} Silver", delta=f"{total:,.0f} (Global)")
             
-            # --- GRAPHIQUE (Basé sur le Réel calculé) ---
+            st.write("---")
             if 'Date' in df.columns:
                 df_c = df.copy()
-                # On convertit les dates FR (JJ/MM/AAAA) ou US vers datetime
                 df_c['Date'] = pd.to_datetime(df_c['Date'], dayfirst=True, errors='coerce')
                 df_c = df_c.dropna(subset=['Date']).sort_values('Date')
                 df_c['Cumul'] = df_c['Reel'].cumsum()
-                
                 if not df_c.empty:
                     st.caption("Évolution de la fortune")
                     fig, ax = plt.subplots(figsize=(10, 3))
@@ -172,7 +154,6 @@ with tab2:
                     ax.ticklabel_format(style='plain', axis='y')
                     st.pyplot(fig)
             
-            # --- TABLEAU (On affiche les montants positifs comme dans le sheet) ---
             df_disp = df.copy()
             if 'Montant' in df_disp.columns: df_disp['Montant'] = df_disp['Montant'].apply(format_monetaire)
             st.dataframe(df_disp.tail(10).sort_index(ascending=False), use_container_width=True)
@@ -222,6 +203,18 @@ with tab3:
             
             df_res = pd.DataFrame(res)
             
+            # --- CALCUL DU SCORE VISUEL (ROUGE / VERT) ---
+            if 'Craft Fame' in df_res.columns:
+                def evaluer_fame(fame):
+                    if fame < SEUIL_FAME_MIN:
+                        return "🔴 Faible"
+                    else:
+                        return "🟢 Productif"
+                
+                # On ajoute la colonne 'Avis'
+                df_res['Avis'] = df_res['Craft Fame'].apply(evaluer_fame)
+
+            # Calcul Progression (Réf)
             if ws_ref:
                 try:
                     ref_d = ws_ref.get_all_records()
@@ -258,15 +251,26 @@ with tab3:
         st.caption(f"Affichage : **{st.session_state.get('display_type', '')}**")
         df_show = st.session_state['data_display'].copy()
         
+        # On recalcule l'avis si on charge depuis la référence (car la ref n'a pas la colonne Avis stockée)
+        if 'Avis' not in df_show.columns and 'Craft Fame' in df_show.columns:
+            df_show['Avis'] = df_show['Craft Fame'].apply(lambda x: "🔴 Faible" if x < SEUIL_FAME_MIN else "🟢 Productif")
+
         cols_conf = {
+            "Avis": st.column_config.TextColumn("Niveau"), # Nouvelle colonne
             "Craft Fame": st.column_config.NumberColumn("Fame Totale", format="%d"),
             "Progression": st.column_config.NumberColumn("📈 Progression", format="%+d"),
             "Guilde": st.column_config.TextColumn("Guilde"),
             "Statut": st.column_config.TextColumn("Statut")
         }
+        
         cols_to_show = [c for c in df_show.columns if c not in ['Ref Fame']]
-        df_show = df_show[cols_to_show]
-        if 'Progression' not in df_show.columns and "Progression" in cols_conf: del cols_conf["Progression"]
+        
+        # On s'assure que Avis est affiché en premier pour la lisibilité
+        ordre_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', 'Guilde', 'Statut']
+        # On filtre pour ne garder que ceux qui existent vraiment dans le tableau
+        cols_finales = [c for c in ordre_cols if c in df_show.columns]
+        
+        df_show = df_show[cols_finales]
 
         st.dataframe(df_show, column_config=cols_conf, use_container_width=True)
     else: st.info("Aucune donnée.")
