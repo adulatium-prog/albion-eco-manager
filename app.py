@@ -8,6 +8,7 @@ import time
 import json
 import re
 from datetime import datetime
+import numpy as np # Nécessaire pour le calcul conditionnel rapide
 
 # --- SÉCURITÉ ---
 if "app_password" in st.secrets:
@@ -36,7 +37,6 @@ def get_albion_stats(pseudo):
     try:
         url_search = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        
         resp = requests.get(url_search, headers=headers)
         if resp.status_code == 200:
             data = resp.json()
@@ -51,10 +51,8 @@ def get_albion_stats(pseudo):
             if target:
                 player_id = target['Id']
                 guild = target.get('GuildName') or "Aucune"
-                
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
-                
                 craft_fame = 0
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
@@ -87,7 +85,7 @@ try:
         
     try: sh = gc.open(NOM_DU_FICHIER_SHEET)
     except: 
-        st.error(f"❌ Impossible d'ouvrir '{NOM_DU_FICHIER_SHEET}'. Vérifie le nom.")
+        st.error(f"❌ Impossible d'ouvrir '{NOM_DU_FICHIER_SHEET}'.")
         st.stop()
 
     worksheet = sh.worksheet(NOM_ONGLET_JOURNAL)
@@ -104,7 +102,7 @@ st.title("🏹 Albion Economy Manager (EU)")
 
 tab1, tab2, tab3 = st.tabs(["✍️ Saisie", "📊 Analyse", "🔍 Suivi Craft"])
 
-# --- TAB 1 : SAISIE ---
+# --- TAB 1 : SAISIE (CORRIGÉE : POSITIF PARTOUT) ---
 with tab1:
     st.subheader("Nouvelle Opération")
     with st.form("ajout"):
@@ -116,15 +114,18 @@ with tab1:
         montant = st.number_input("Montant", step=10000, format="%d")
         note = st.text_input("Note")
         if st.form_submit_button("Valider"):
-            final = montant if type_op == "Recette (+)" else -montant
-            date = datetime.now().strftime("%d/%m/%Y")
+            # CORRECTION : On envoie le montant POSITIF dans tous les cas
+            final = montant 
+            
+            # Format date FR
+            date = datetime.now().strftime("%d/%m/%Y %H:%M")
             try:
                 worksheet.append_row([date, batiment, type_op, final, note])
                 st.success(f"✅ Enregistré : {format_monetaire(final)} Silver")
                 st.cache_data.clear()
             except Exception as e: st.error(f"Erreur : {e}")
 
-# --- TAB 2 : ANALYSE ---
+# --- TAB 2 : ANALYSE (ADAPTÉE) ---
 with tab2:
     st.subheader("Tableau de bord")
     try:
@@ -132,50 +133,46 @@ with tab2:
         if data:
             df = pd.DataFrame(data)
             
-            # --- 1. KPI COULEUR ---
-            if 'Montant' in df.columns:
-                total = df['Montant'].sum()
-                # Astuce : On utilise 'delta' pour colorer automatiquement
-                # Si positif -> Vert, Si négatif -> Rouge
+            # --- CALCUL SPÉCIAL POUR PYTHON ---
+            # Comme tout est positif dans le Sheet, Python doit savoir quoi soustraire
+            # On crée une colonne temporaire 'Reel' pour les calculs du graphique
+            if 'Montant' in df.columns and 'Type' in df.columns:
+                # Si Type contient "Dépense", on multiplie par -1, sinon on garde le montant
+                df['Reel'] = df.apply(lambda x: -x['Montant'] if "Dépense" in str(x['Type']) else x['Montant'], axis=1)
+                
+                total = df['Reel'].sum()
                 st.metric(
                     label="💰 Trésorerie Totale", 
                     value=f"{format_monetaire(total)} Silver",
-                    delta=f"{total:,.0f} (Global)" # Le delta colore le chiffre
+                    delta=f"{total:,.0f} (Global)"
                 )
+            else:
+                st.warning("Colonnes 'Montant' ou 'Type' manquantes.")
+                st.stop()
 
             st.write("---")
             
-            # --- 2. GRAPHIQUE INTELLIGENT ---
-            if 'Date' in df.columns and 'Montant' in df.columns:
+            # --- GRAPHIQUE (Basé sur le Réel calculé) ---
+            if 'Date' in df.columns:
                 df_c = df.copy()
-                df_c['Date'] = pd.to_datetime(df_c['Date'], errors='coerce')
+                # On convertit les dates FR (JJ/MM/AAAA) ou US vers datetime
+                df_c['Date'] = pd.to_datetime(df_c['Date'], dayfirst=True, errors='coerce')
                 df_c = df_c.dropna(subset=['Date']).sort_values('Date')
-                df_c['Cumul'] = df_c['Montant'].cumsum()
+                df_c['Cumul'] = df_c['Reel'].cumsum()
                 
                 if not df_c.empty:
                     st.caption("Évolution de la fortune")
                     fig, ax = plt.subplots(figsize=(10, 3))
-                    
-                    # DÉTERMINATION DE LA COULEUR
                     dernier_montant = df_c['Cumul'].iloc[-1]
-                    # Si on est positif = Vert (#00CC96), sinon Rouge (#FF4B4B)
                     couleur_ligne = '#00CC96' if dernier_montant >= 0 else '#FF4B4B'
-                    
-                    # Tracer la ligne 0 (Repère visuel)
                     ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
-                    
-                    # Tracer la courbe avec la bonne couleur
                     ax.plot(df_c['Date'], df_c['Cumul'], color=couleur_ligne, marker='o')
-                    
                     ax.grid(True, alpha=0.3)
                     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
-                    
-                    # On évite la notation scientifique moche (1e8) sur l'axe Y
                     ax.ticklabel_format(style='plain', axis='y')
-                    
                     st.pyplot(fig)
             
-            # --- 3. TABLEAU ---
+            # --- TABLEAU (On affiche les montants positifs comme dans le sheet) ---
             df_disp = df.copy()
             if 'Montant' in df_disp.columns: df_disp['Montant'] = df_disp['Montant'].apply(format_monetaire)
             st.dataframe(df_disp.tail(10).sort_index(ascending=False), use_container_width=True)
