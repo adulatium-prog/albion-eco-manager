@@ -117,7 +117,7 @@ with tab1:
         note = st.text_input("Note")
         if st.form_submit_button("Valider"):
             final = montant if type_op == "Recette (+)" else -montant
-            date = datetime.now().strftime("%Y-%m-%d %H:%M")
+            date = datetime.now().strftime("%d/%m/%Y")
             try:
                 worksheet.append_row([date, batiment, type_op, final, note])
                 st.success(f"✅ Enregistré : {format_monetaire(final)} Silver")
