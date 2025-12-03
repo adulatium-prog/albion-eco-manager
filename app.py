@@ -17,7 +17,7 @@ if "app_password" in st.secrets:
         st.stop()
 
 # --- CONFIGURATION (PROD) ---
-NOM_DU_FICHIER_SHEET = "arion plot"  # C'est ton vrai fichier
+NOM_DU_FICHIER_SHEET = "Arion Plot"  # C'est ton vrai fichier
 NOM_ONGLET_JOURNAL = "Journal_App"   # Pour les sous
 NOM_ONGLET_REF = "Reference_Craft"   # Pour le suivi d'évolution
 
