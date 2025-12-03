@@ -53,11 +53,15 @@ def get_albion_stats(pseudo):
 
 # --- CONNEXION (HYBRIDE PC/CLOUD) ---
 try:
-    # 1. Si on est sur le Cloud
+    # 1. Si on est sur le Cloud (Streamlit)
     if "gcp_service_account" in st.secrets:
-        dict_secrets = dict(st.secrets["gcp_service_account"])
+        # On récupère le contenu brut (texte)
+        secret_content = st.secrets["gcp_service_account"]
+        # On le transforme de JSON (texte) vers Dictionnaire (Python)
+        dict_secrets = json.loads(secret_content)
         gc = gspread.service_account_from_dict(dict_secrets)
-    # 2. Si on est sur ton PC
+        
+    # 2. Si on est sur ton PC (Local)
     else:
         gc = gspread.service_account(filename='service_account.json')
         
@@ -67,7 +71,6 @@ try:
 except Exception as e:
     st.error(f"❌ Erreur de connexion : {e}")
     st.stop()
-
 # --- INTERFACE ---
 st.set_page_config(page_title="Albion Manager", page_icon="💰", layout="wide")
 st.title("🏹 Albion Economy Manager")
