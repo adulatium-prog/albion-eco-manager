@@ -18,9 +18,7 @@ if "app_password" in st.secrets:
         st.stop()
 
 # --- CONFIGURATION ---
-# ICI ON REMET LE NOM DU FICHIER DIRECTEMENT
 NOM_DU_FICHIER_SHEET = "Arion Plot"
-
 NOM_ONGLET_JOURNAL = "Journal_App"
 NOM_ONGLET_REF = "Reference_Craft"
 
@@ -87,11 +85,9 @@ try:
     else:
         gc = gspread.service_account(filename='service_account.json')
         
-    # CONNEXION PAR NOM (C'est ici qu'on a corrigé)
-    try: 
-        sh = gc.open(NOM_DU_FICHIER_SHEET)
-    except Exception as e: 
-        st.error(f"❌ Impossible d'ouvrir le fichier '{NOM_DU_FICHIER_SHEET}'. Vérifie le nom exact sur ton Drive.")
+    try: sh = gc.open(NOM_DU_FICHIER_SHEET)
+    except: 
+        st.error(f"❌ Impossible d'ouvrir '{NOM_DU_FICHIER_SHEET}'. Vérifie le nom.")
         st.stop()
 
     worksheet = sh.worksheet(NOM_ONGLET_JOURNAL)
@@ -108,7 +104,7 @@ st.title("🏹 Albion Economy Manager (EU)")
 
 tab1, tab2, tab3 = st.tabs(["✍️ Saisie", "📊 Analyse", "🔍 Suivi Craft"])
 
-# --- TAB 1 ---
+# --- TAB 1 : SAISIE ---
 with tab1:
     st.subheader("Nouvelle Opération")
     with st.form("ajout"):
@@ -128,34 +124,64 @@ with tab1:
                 st.cache_data.clear()
             except Exception as e: st.error(f"Erreur : {e}")
 
-# --- TAB 2 ---
+# --- TAB 2 : ANALYSE ---
 with tab2:
     st.subheader("Tableau de bord")
     try:
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
+            
+            # --- 1. KPI COULEUR ---
             if 'Montant' in df.columns:
-                st.metric("💰 Trésorerie", f"{format_monetaire(df['Montant'].sum())} Silver")
+                total = df['Montant'].sum()
+                # Astuce : On utilise 'delta' pour colorer automatiquement
+                # Si positif -> Vert, Si négatif -> Rouge
+                st.metric(
+                    label="💰 Trésorerie Totale", 
+                    value=f"{format_monetaire(total)} Silver",
+                    delta=f"{total:,.0f} (Global)" # Le delta colore le chiffre
+                )
+
             st.write("---")
+            
+            # --- 2. GRAPHIQUE INTELLIGENT ---
             if 'Date' in df.columns and 'Montant' in df.columns:
                 df_c = df.copy()
                 df_c['Date'] = pd.to_datetime(df_c['Date'], errors='coerce')
                 df_c = df_c.dropna(subset=['Date']).sort_values('Date')
                 df_c['Cumul'] = df_c['Montant'].cumsum()
+                
                 if not df_c.empty:
                     st.caption("Évolution de la fortune")
                     fig, ax = plt.subplots(figsize=(10, 3))
-                    ax.plot(df_c['Date'], df_c['Cumul'], color='#00CC96', marker='o')
+                    
+                    # DÉTERMINATION DE LA COULEUR
+                    dernier_montant = df_c['Cumul'].iloc[-1]
+                    # Si on est positif = Vert (#00CC96), sinon Rouge (#FF4B4B)
+                    couleur_ligne = '#00CC96' if dernier_montant >= 0 else '#FF4B4B'
+                    
+                    # Tracer la ligne 0 (Repère visuel)
+                    ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
+                    
+                    # Tracer la courbe avec la bonne couleur
+                    ax.plot(df_c['Date'], df_c['Cumul'], color=couleur_ligne, marker='o')
+                    
                     ax.grid(True, alpha=0.3)
                     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+                    
+                    # On évite la notation scientifique moche (1e8) sur l'axe Y
+                    ax.ticklabel_format(style='plain', axis='y')
+                    
                     st.pyplot(fig)
+            
+            # --- 3. TABLEAU ---
             df_disp = df.copy()
             if 'Montant' in df_disp.columns: df_disp['Montant'] = df_disp['Montant'].apply(format_monetaire)
             st.dataframe(df_disp.tail(10).sort_index(ascending=False), use_container_width=True)
-    except: st.warning("Chargement...")
+    except Exception as e: st.warning(f"Chargement... {e}")
 
-# --- TAB 3 (MULTI-INPUT) ---
+# --- TAB 3 : SUIVI CRAFT ---
 with tab3:
     st.subheader("🕵️ Suivi de Production")
     col_input, col_action = st.columns([2, 1])
@@ -168,7 +194,6 @@ with tab3:
         st.write("")
         save_ref_btn = st.button("💾 Sauvegarder comme Réf.", help="Écrase l'onglet Référence", use_container_width=True)
 
-    # Chargement Init
     if 'data_display' not in st.session_state:
         st.session_state['data_display'] = None
         if ws_ref:
@@ -181,17 +206,12 @@ with tab3:
                         st.session_state['display_type'] = "Référence"
             except: pass
 
-    # Scan Intelligent (REGEX)
     if scan_btn and raw_text:
-        # On utilise REGEX pour trouver tous les patterns "Player:..."
         matches = re.findall(r'"Player:([^"]+)"', raw_text)
-        # On enlève les doublons
         pseudos = list(set(matches))
-        
-        if not pseudos:
-            st.warning("Aucun joueur trouvé. Vérifie le format.")
+        if not pseudos: st.warning("Aucun joueur trouvé.")
         else:
-            st.info(f"Analyse de {len(pseudos)} joueurs uniques...")
+            st.info(f"Analyse de {len(pseudos)} joueurs...")
             res = []
             barre = st.progress(0)
             status = st.empty()
@@ -205,7 +225,6 @@ with tab3:
             
             df_res = pd.DataFrame(res)
             
-            # Calcul Progression
             if ws_ref:
                 try:
                     ref_d = ws_ref.get_all_records()
@@ -223,7 +242,6 @@ with tab3:
             st.session_state['display_type'] = "Scan Direct"
             st.success("Terminé !")
 
-    # Sauvegarde
     if save_ref_btn:
         if st.session_state['data_display'] is not None and not st.session_state['data_display'].empty:
             if ws_ref:
@@ -238,7 +256,6 @@ with tab3:
                 except Exception as e: st.error(f"Erreur : {e}")
         else: st.warning("Rien à sauvegarder.")
 
-    # Affichage
     st.divider()
     if st.session_state['data_display'] is not None:
         st.caption(f"Affichage : **{st.session_state.get('display_type', '')}**")
