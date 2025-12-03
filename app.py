@@ -18,7 +18,7 @@ if "app_password" in st.secrets:
 
 # --- CONFIGURATION ---
 # REMPLACE L'ID CI-DESSOUS PAR LE TIEN SI NÉCESSAIRE
-SHEET_ID = "COLLE_TON_ID_ICI" 
+SHEET_ID = "Arion Plot" 
 
 NOM_ONGLET_JOURNAL = "Journal_App"
 NOM_ONGLET_REF = "Reference_Craft"
