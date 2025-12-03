@@ -16,30 +16,30 @@ if "app_password" in st.secrets:
         st.sidebar.warning("Saisis le mot de passe pour accéder.")
         st.stop()
 
-# --- CONFIGURATION (PROD) ---
-NOM_DU_FICHIER_SHEET = "Arion Plot"  # C'est ton vrai fichier
-NOM_ONGLET_JOURNAL = "Journal_App"   # Pour les sous
-NOM_ONGLET_REF = "Reference_Craft"   # Pour le suivi d'évolution
+# --- CONFIGURATION ---
+SHEET_ID = "1aBcD..." # <--- REMETS TON ID ICI SI TU L'AVAIS MIS, SINON LAISSE LE NOM
+NOM_DU_FICHIER_SHEET = "arion plot" 
+NOM_ONGLET_JOURNAL = "Journal_App"
+NOM_ONGLET_REF = "Reference_Craft"
 
-# --- FONCTION FORMATAGE ---
-def format_fr(nombre):
-    """Affiche 10000 -> 10 000,00"""
+# --- FONCTIONS DE FORMATAGE (VISUEL) ---
+def format_monetaire(valeur):
+    """Affiche: 10 000,00"""
     try:
-        return "{:,.2f}".format(float(nombre)).replace(",", " ").replace(".", ",")
+        return "{:,.2f}".format(float(valeur)).replace(",", " ").replace(".", ",")
     except:
-        return str(nombre)
+        return str(valeur)
 
-def format_entier_fr(nombre):
-    """Affiche 10000 -> 10 000 (sans virgule)"""
+def format_nombre_entier(valeur):
+    """Affiche: 10 000 000 (Pour la Fame)"""
     try:
-        return "{:,.0f}".format(float(nombre)).replace(",", " ")
+        return "{:,.0f}".format(float(valeur)).replace(",", " ")
     except:
-        return str(nombre)
+        return str(valeur)
 
 # --- API ALBION (EU - ROBUSTE) ---
 def get_albion_stats(pseudo):
     try:
-        # URL AMS (Amsterdam) pour l'Europe
         url_search = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         
@@ -62,8 +62,6 @@ def get_albion_stats(pseudo):
                     info = resp_stats.json()
                     ls = info.get('LifetimeStatistics', {})
                     crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
-                    
-                    # Recherche multichemin (comme ton script Sheet)
                     candidates = [
                         info.get('CraftFame'), info.get('CraftingFame'),
                         crafting.get('CraftFame'), crafting.get('Total'), crafting.get('craftFame')
@@ -90,13 +88,18 @@ try:
     else:
         gc = gspread.service_account(filename='service_account.json')
         
-    sh = gc.open(NOM_DU_FICHIER_SHEET)
+    # TENTATIVE PAR ID (Plus sûr)
+    try:
+        # Si tu as mis un ID en haut, décommente la ligne suivante :
+        # sh = gc.open_by_key(SHEET_ID) 
+        sh = gc.open(NOM_DU_FICHIER_SHEET) # Sinon on garde le nom
+    except:
+         sh = gc.open(NOM_DU_FICHIER_SHEET)
+
     worksheet = sh.worksheet(NOM_ONGLET_JOURNAL)
-    
     try:
         ws_ref = sh.worksheet(NOM_ONGLET_REF)
     except:
-        st.error(f"⚠️ L'onglet '{NOM_ONGLET_REF}' n'existe pas. Crée-le dans 'arion plot' !")
         ws_ref = None
 
 except Exception as e:
@@ -128,7 +131,7 @@ with tab1:
             date = datetime.now().strftime("%Y-%m-%d %H:%M")
             try:
                 worksheet.append_row([date, batiment, type_op, final, note])
-                st.success(f"✅ Enregistré : {format_fr(final)} Silver")
+                st.success(f"✅ Enregistré : {format_monetaire(final)} Silver")
                 st.cache_data.clear()
             except Exception as e:
                 st.error(f"Erreur : {e}")
@@ -141,7 +144,7 @@ with tab2:
         if data:
             df = pd.DataFrame(data)
             if 'Montant' in df.columns:
-                st.metric("💰 Trésorerie", f"{format_fr(df['Montant'].sum())} Silver")
+                st.metric("💰 Trésorerie", f"{format_monetaire(df['Montant'].sum())} Silver")
             
             st.write("---")
             if 'Date' in df.columns and 'Montant' in df.columns:
@@ -156,10 +159,11 @@ with tab2:
                     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
                     st.pyplot(fig)
             
-            # Tableau historique formaté
+            # Application du formatage visuel au tableau
             df_disp = df.copy()
             if 'Montant' in df_disp.columns:
-                df_disp['Montant'] = df_disp['Montant'].apply(format_fr)
+                df_disp['Montant'] = df_disp['Montant'].apply(format_monetaire)
+                
             st.dataframe(df_disp.tail(10).sort_index(ascending=False), use_container_width=True)
     except:
         st.warning("Chargement...")
@@ -169,18 +173,14 @@ with tab3:
     st.subheader("🕵️ Suivi de Production")
     
     col_input, col_action = st.columns([2, 1])
-    
     with col_input:
-        raw_text = st.text_area("Colle le JSON des droits", height=100, placeholder="{ 'Player:...' }")
-        
+        raw_text = st.text_area("Colle le JSON des droits", height=100)
     with col_action:
         st.write("### Actions")
         scan_btn = st.button("🚀 Lancer le Scan", type="primary", use_container_width=True)
         st.write("")
-        # Bouton de sauvegarde de référence
-        save_ref_btn = st.button("💾 Sauvegarder cette réf.", help="Enregistre les scores actuels comme point de départ", use_container_width=True)
+        save_ref_btn = st.button("💾 Sauvegarder réf.", use_container_width=True)
 
-    # Logique de scan
     if scan_btn and raw_text:
         pseudos = []
         try:
@@ -205,62 +205,52 @@ with tab3:
             barre.progress((i+1)/len(pseudos))
         barre.empty()
         
-        # Création du DataFrame des résultats actuels
         df_res = pd.DataFrame(res)
         
-        # CALCUL ÉVOLUTION SI POSSIBLE
         if ws_ref:
             try:
                 ref_data = ws_ref.get_all_records()
                 if ref_data:
                     df_ref = pd.DataFrame(ref_data)
-                    # On s'assure que les colonnes existent
                     if 'Pseudo' in df_ref.columns and 'Craft Fame' in df_ref.columns:
-                        # On renomme pour éviter les conflits
                         df_ref = df_ref[['Pseudo', 'Craft Fame']].rename(columns={'Craft Fame': 'Ref Fame'})
-                        # Fusion (VLOOKUP)
                         df_res = pd.merge(df_res, df_ref, on='Pseudo', how='left')
-                        # Calcul Diff
                         df_res['Ref Fame'] = df_res['Ref Fame'].fillna(0)
                         df_res['Progression'] = df_res['Craft Fame'] - df_res['Ref Fame']
-            except Exception as e:
-                st.warning(f"Impossible de comparer avec la référence : {e}")
+            except:
+                pass
 
-        # Sauvegarde en mémoire pour le bouton de sauvegarde
         st.session_state['last_scan'] = df_res
+        st.success("Terminé !")
         
-        # Affichage
-        st.success("Scan terminé !")
+        # --- MISE EN FORME DU TABLEAU SCANNER ---
+        df_display_scan = df_res.copy()
         
-        # Configuration des colonnes pour l'affichage
-        cols_config = {
-            "Craft Fame": st.column_config.NumberColumn("Fame Actuelle", format="%d"),
-            "Progression": st.column_config.NumberColumn(
-                "📈 Progression", 
-                format="%+d", # Affiche +100 ou -100
-                help="Différence depuis la dernière sauvegarde"
-            ),
-            "Guilde": st.column_config.TextColumn("Guilde"),
-            "Statut": st.column_config.TextColumn("Statut")
-        }
-        
-        # Si la colonne progression n'existe pas (pas de ref), on l'enlève de la config
-        if 'Progression' not in df_res.columns:
-            del cols_config["Progression"]
+        # On applique le formatage "espace" à la Fame
+        if 'Craft Fame' in df_display_scan.columns:
+            df_display_scan['Craft Fame'] = df_display_scan['Craft Fame'].apply(format_nombre_entier)
+            
+        # On applique le formatage "espace" à la Progression (si elle existe)
+        if 'Progression' in df_display_scan.columns:
+            # On ajoute un "+" devant si c'est positif pour faire joli
+            def format_prog(x):
+                try:
+                    s = format_nombre_entier(x)
+                    return f"+{s}" if x > 0 else s
+                except: return str(x)
+            df_display_scan['Progression'] = df_display_scan['Progression'].apply(format_prog)
 
-        st.dataframe(df_res, column_config=cols_config, use_container_width=True)
+        st.dataframe(df_display_scan, use_container_width=True)
 
-    # Logique de sauvegarde
     if save_ref_btn:
         if 'last_scan' in st.session_state and not st.session_state['last_scan'].empty:
             if ws_ref:
                 try:
                     df_to_save = st.session_state['last_scan'][['Pseudo', 'Craft Fame']]
                     ws_ref.clear()
-                    # On réécrit tout : Titres + Données
                     ws_ref.update([df_to_save.columns.values.tolist()] + df_to_save.values.tolist())
-                    st.success(f"✅ Nouvelle référence sauvegardée ! Prochain scan comparera à maintenant.")
+                    st.success(f"✅ Référence sauvegardée !")
                 except Exception as e:
-                    st.error(f"Erreur sauvegarde : {e}")
+                    st.error(f"Erreur : {e}")
         else:
-            st.warning("⚠️ Fais d'abord un scan avant de sauvegarder une référence !")
+            st.warning("Fais d'abord un scan !")
