@@ -155,7 +155,7 @@ with tab2:
 # --- TAB 3 : ARION SCANNER ---
 with tab3:
     st.subheader("🚀 Arion Scanner")
-    st.info("💡 Colle les permissions. Le scanner détecte les doublons ET suggère des regroupements par Alliance.")
+    st.info("💡 Colle les permissions. Le scanner détecte les doublons ET suggère les regroupements pertinents (si plusieurs guildes d'une même alliance sont trouvées).")
     
     col_input, col_action = st.columns([2, 1])
     with col_input:
@@ -216,8 +216,7 @@ with tab3:
                         status_doublon = "⚠️ Doublon (Alliance)"
                         detail_doublon = f"Déjà inclus via Alliance"
 
-                    # 2. Collecte de données pour Intelligence de Groupe
-                    # On ignore ceux qui n'ont pas d'alliance
+                    # 2. Collecte pour Intelligence de Groupe
                     if infos['Alliance'] != "-":
                         nom_alli_propre = infos['Alliance']
                         if infos['AllianceTag']: nom_alli_propre += f" [{infos['AllianceTag']}]"
@@ -242,20 +241,20 @@ with tab3:
             barre.empty()
             status.success(f"Scan terminé !")
 
-            # --- INTELLIGENCE DE GROUPE ---
-            # On cherche les alliances qui ont plusieurs guildes différentes dans le scan
+            # --- INTELLIGENCE DE GROUPE (FILTRÉE) ---
             regroupements_possibles = []
             for alliance, guildes in groupe_stats.items():
-                # On ne suggère que si l'alliance n'est PAS DÉJÀ dans la liste input (sinon c'est déjà un doublon)
-                # Et qu'il y a plus d'une entité concernée
+                
+                # Vérif si déjà couvert
                 alliance_clean = alliance.split(" [")[0].lower()
                 tag_clean = ""
                 if "[" in alliance: tag_clean = alliance.split("[")[1].replace("]", "").lower()
                 
                 is_already_covered = (alliance_clean in memoire_alliances) or (tag_clean in memoire_alliances and tag_clean != "")
                 
-                if not is_already_covered and len(guildes) >= 1:
-                     # On compte combien de joueurs sont concernés
+                # LA MODIF EST ICI : len(guildes) > 1 
+                # On ne propose QUE si il y a plus d'une guilde différente
+                if not is_already_covered and len(guildes) > 1:
                      nb_joueurs = sum(1 for r in resultats if r.get('Alliance_Display') == alliance)
                      regroupements_possibles.append({
                          "Alliance": alliance,
@@ -265,7 +264,7 @@ with tab3:
                      })
 
             if regroupements_possibles:
-                st.info("📢 **Regroupements Suggérés :** Ces alliances contiennent plusieurs joueurs/guildes scannés. Les ajouter à votre liste simplifierait les perms.")
+                st.info(f"📢 **{len(regroupements_possibles)} Regroupements Suggérés :** Ces alliances contiennent plusieurs guildes distinctes. Vous devriez les ajouter à votre liste.")
                 cols_sugg = st.columns(len(regroupements_possibles)) if len(regroupements_possibles) < 4 else st.columns(3)
                 
                 for idx, item in enumerate(regroupements_possibles):
@@ -273,8 +272,12 @@ with tab3:
                         st.markdown(f"""
                         **🛡️ {item['Alliance']}**
                         * {item['Nb_Joueurs']} joueurs concernés
-                        * Guildes : {item['Guildes']}
+                        * **{item['Nb_Guildes']} Guildes :** {item['Guildes']}
                         """)
+            else:
+                # Optionnel : petit message si rien à regrouper mais que le scan a marché
+                if resultats:
+                    st.caption("✅ Aucun regroupement multi-guildes évident détecté.")
 
             df_res = pd.DataFrame(resultats)
             
