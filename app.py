@@ -6,8 +6,6 @@ import time
 import json
 import re
 from datetime import datetime
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 
 # --- SÉCURITÉ ---
 if "app_password" in st.secrets:
@@ -28,15 +26,31 @@ def format_monetaire(valeur):
     try: return "{:,.2f}".format(float(valeur)).replace(",", " ").replace(".", ",")
     except: return str(valeur)
 
-def format_nombre_entier(valeur):
-    try: return "{:,.0f}".format(float(valeur)).replace(",", " ")
-    except: return str(valeur)
+# --- FONCTION INTELLIGENTE (EXTRACTION) ---
+def extraire_noms_et_tags(liste_brute):
+    """
+    Sépare les Noms et les Tags pour que le croisement fonctionne dans tous les cas.
+    Exemple entrée : ["Dog Walkers [WALKR]"]
+    Sortie mémoire : {"dog walkers [walkr]", "dog walkers", "walkr"}
+    """
+    resultat = set()
+    for item in liste_brute:
+        txt = item.strip().lower()
+        resultat.add(txt) # Ajoute la ligne complète
+        
+        # Regex pour trouver "Nom [TAG]"
+        match = re.search(r'^(.*?)\[(.*?)\]$', txt)
+        if match:
+            nom_seul = match.group(1).strip()
+            tag_seul = match.group(2).strip()
+            if nom_seul: resultat.add(nom_seul)
+            if tag_seul: resultat.add(tag_seul)
+            
+    return resultat
 
 # --- API ALBION ---
 def get_player_stats(pseudo):
-    """ 
-    Récupère les stats + Nom Alliance + Tag Alliance pour comparaison robuste.
-    """
+    """ Récupère les stats et les infos d'affiliation (Guilde + Alliance) """
     try:
         url_search = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -46,7 +60,6 @@ def get_player_stats(pseudo):
             data = resp.json()
             players = data.get('players', [])
             
-            # Recherche exacte
             target = None
             for p in players:
                 if p['Name'].lower() == pseudo.lower():
@@ -57,12 +70,12 @@ def get_player_stats(pseudo):
             if target:
                 player_id = target['Id']
                 
-                # Infos de base
+                # Infos préliminaires
                 guild_name = target.get('GuildName') or "Aucune"
                 alliance_name = target.get('AllianceName') or "-"
-                alliance_tag = target.get('AllianceTag') or "" # On récupère le Tag aussi
+                alliance_tag = target.get('AllianceTag') or ""
 
-                # Appel détail pour la Fame
+                # Appel détail
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
                 craft_fame = 0
@@ -70,7 +83,6 @@ def get_player_stats(pseudo):
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
                     
-                    # Mise à jour avec données précises si dispo
                     if info.get('AllianceName'): alliance_name = info.get('AllianceName')
                     if info.get('AllianceTag'): alliance_tag = info.get('AllianceTag')
                     
@@ -86,7 +98,7 @@ def get_player_stats(pseudo):
                     "Pseudo": target['Name'], 
                     "Guilde": guild_name,
                     "Alliance": alliance_name,
-                    "AllianceTag": alliance_tag, # Stocké séparément pour la vérif
+                    "AllianceTag": alliance_tag,
                     "Craft Fame": craft_fame, 
                     "Trouve": True
                 }
@@ -145,7 +157,7 @@ with tab2:
 # --- TAB 3 : ARION SCANNER ---
 with tab3:
     st.subheader("🚀 Arion Scanner")
-    st.info("💡 Colle la liste des permissions. Le scanner détecte si un joueur est déjà couvert par sa **Guilde** ou son **Alliance** (Nom ou Tag).")
+    st.info("💡 Colle les permissions. Le scanner identifie les doublons si le joueur est couvert par sa **Guilde** OU son **Alliance**.")
     
     col_input, col_action = st.columns([2, 1])
     with col_input:
@@ -165,14 +177,19 @@ with tab3:
             except: pass
 
     if scan_btn and raw_text:
-        # 1. Mise en mémoire (Guilde ET Alliance)
-        memoire_guildes_input = set(g.strip().lower() for g in re.findall(r'"Guild:([^"]+)"', raw_text))
-        memoire_alliances_input = set(a.strip().lower() for a in re.findall(r'"Alliance:([^"]+)"', raw_text))
+        # 1. Analyse de la liste fournie (Input)
+        guildes_brutes = re.findall(r'"Guild:([^"]+)"', raw_text)
+        alliances_brutes = re.findall(r'"Alliance:([^"]+)"', raw_text)
         
+        # On extrait tout : Noms complets, Noms seuls, Tags
+        memoire_guildes = extraire_noms_et_tags(guildes_brutes)
+        memoire_alliances = extraire_noms_et_tags(alliances_brutes)
+        
+        # Liste des joueurs à scanner
         raw_players = list(set(re.findall(r'"Player:([^"]+)"', raw_text)))
 
-        if memoire_guildes_input or memoire_alliances_input:
-            st.toast(f"ℹ️ Comparaison active : {len(memoire_guildes_input)} Guildes & {len(memoire_alliances_input)} Alliances en mémoire.")
+        if memoire_guildes or memoire_alliances:
+            st.toast(f"ℹ️ Liste chargée : {len(guildes_brutes)} Guildes & {len(alliances_brutes)} Alliances.")
         
         if not raw_players:
             st.warning("Aucun joueur trouvé.")
@@ -184,35 +201,36 @@ with tab3:
             for i, p_name in enumerate(raw_players):
                 status.text(f"Analyse : {p_name}...")
                 
-                # Appel API
+                # 2. Données réelles du joueur (API)
                 infos = get_player_stats(p_name)
                 
-                # --- LOGIQUE DE DÉTECTION DE DOUBLON ---
+                # 3. CROISEMENT (La logique que tu veux)
                 status_doublon = "✅ Unique"
                 detail_doublon = ""
 
                 if infos['Trouve']:
-                    # Données API
+                    # Données en minuscule pour comparaison
                     g_api = infos['Guilde'].lower()
                     a_name_api = infos['Alliance'].lower()
                     a_tag_api = infos['AllianceTag'].lower()
                     
-                    # 1. Vérif Guilde
-                    if g_api in memoire_guildes_input:
+                    # CAS A : Sa GUILDE est dans la liste ?
+                    if g_api in memoire_guildes:
                         status_doublon = "⚠️ Doublon (Guilde)"
                         detail_doublon = f"Guilde '{infos['Guilde']}' présente"
                     
-                    # 2. Vérif Alliance (Nom OU Tag)
-                    elif (a_name_api != "-" and a_name_api in memoire_alliances_input) or \
-                         (a_tag_api != "" and a_tag_api in memoire_alliances_input):
+                    # CAS B : Son ALLIANCE (Nom ou Tag) est dans la liste ?
+                    # C'est ici que V3L0 sera attrapé car 'WALKR' sera trouvé dans memoire_alliances
+                    elif (a_name_api != "-" and a_name_api in memoire_alliances) or \
+                         (a_tag_api != "" and a_tag_api in memoire_alliances):
                         status_doublon = "⚠️ Doublon (Alliance)"
                         detail_doublon = f"Alliance '{infos['Alliance']}' présente"
 
                 infos['Analyse'] = status_doublon
                 infos['Détail'] = detail_doublon
                 
-                # Pour l'affichage propre : "Nom [TAG]"
-                if infos['AllianceTag']:
+                # Affichage propre
+                if infos['AllianceTag'] and infos['AllianceTag'].lower() not in infos['Alliance'].lower():
                     infos['Alliance_Display'] = f"{infos['Alliance']} [{infos['AllianceTag']}]"
                 else:
                     infos['Alliance_Display'] = infos['Alliance']
@@ -222,7 +240,7 @@ with tab3:
                 barre.progress((i+1)/len(raw_players))
 
             barre.empty()
-            status.success(f"Scan terminé !")
+            status.success(f"Terminé !")
 
             df_res = pd.DataFrame(resultats)
             
@@ -243,11 +261,8 @@ with tab3:
 
             if 'Progression' not in df_res.columns: df_res['Progression'] = "✨ Nouveau"; df_res['% Évol.'] = "-"
 
-            # --- AVIS ---
             df_res['Avis'] = df_res['Craft Fame'].apply(lambda x: "🟢 Productif" if x > SEUIL_FAME_MIN else "🔴 Faible")
-
             st.session_state['data_display'] = df_res
-            st.session_state['display_type'] = "Arion Scanner"
 
     # SAUVEGARDE
     if save_ref_btn and st.session_state['data_display'] is not None:
@@ -261,27 +276,18 @@ with tab3:
     if st.session_state['data_display'] is not None:
         df_show = st.session_state['data_display'].copy()
         
-        # Filtres
         c_search, c_filter = st.columns(2)
         with c_search: search = st.text_input("🔎 Filtrer", "")
         with c_filter: show_only_dup = st.checkbox("Montrer uniquement les Doublons", False)
 
-        if search: 
-            df_show = df_show[df_show['Pseudo'].str.contains(search, case=False) | df_show['Guilde'].str.contains(search, case=False)]
-        
-        if show_only_dup:
-             df_show = df_show[df_show['Analyse'].str.contains("Doublon")]
+        if search: df_show = df_show[df_show['Pseudo'].str.contains(search, case=False) | df_show['Guilde'].str.contains(search, case=False)]
+        if show_only_dup: df_show = df_show[df_show['Analyse'].str.contains("Doublon")]
 
         cols_conf = {
             "Craft Fame": st.column_config.NumberColumn("Fame Totale", format="%d"),
-            "Progression": st.column_config.TextColumn("Progression"),
-            "Guilde": st.column_config.TextColumn("Guilde"),
-            "Alliance_Display": st.column_config.TextColumn("Alliance"), # On utilise la colonne combinée
+            "Alliance_Display": st.column_config.TextColumn("Alliance"),
             "Analyse": st.column_config.TextColumn("État Liste"),
             "Détail": st.column_config.TextColumn("Raison")
         }
-        # Note: on prend 'Alliance_Display' mais on l'affiche sous le nom "Alliance" dans le tableau
         final_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Alliance_Display', 'Analyse', 'Détail']
-        
-        # Petit hack pour que le tri fonctionne si la colonne s'appelle différemment dans le DF
         st.dataframe(df_show[[c for c in final_cols if c in df_show.columns]], column_config=cols_conf, use_container_width=True)
