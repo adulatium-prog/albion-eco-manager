@@ -22,7 +22,7 @@ NOM_DU_FICHIER_SHEET = "Arion Plot"
 NOM_ONGLET_JOURNAL = "Journal_App"
 NOM_ONGLET_REF = "Reference_Craft"
 
-# 🎯 CONFIGURATION DU SEUIL (4 Millions)
+# 🎯 SEUIL DE PROGRESSION (4 Millions)
 SEUIL_FAME_MIN = 4000000 
 
 # --- FONCTIONS FORMATAGE ---
@@ -117,10 +117,10 @@ with tab1:
         note = st.text_input("Note")
         if st.form_submit_button("Valider"):
             final = montant 
-            date = datetime.now().strftime("%d/%m/%Y %H:%M")
+            date = datetime.now().strftime("%d/%m")
             try:
                 worksheet.append_row([date, batiment, type_op, final, note])
-                st.success(f"✅ Enregistré : {format_monetaire(final)} Silver")
+                st.success(f"✅ Enregistré : {format_monetaire(final)} Silver ({date})")
                 st.cache_data.clear()
             except Exception as e: st.error(f"Erreur : {e}")
 
@@ -131,6 +131,7 @@ with tab2:
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
+            
             if 'Montant' in df.columns and 'Type' in df.columns:
                 df['Reel'] = df.apply(lambda x: -x['Montant'] if "Dépense" in str(x['Type']) else x['Montant'], axis=1)
                 total = df['Reel'].sum()
@@ -139,7 +140,7 @@ with tab2:
             st.write("---")
             if 'Date' in df.columns:
                 df_c = df.copy()
-                df_c['Date'] = pd.to_datetime(df_c['Date'], dayfirst=True, errors='coerce')
+                df_c['Date'] = pd.to_datetime(df_c['Date'], dayfirst=True, format="%d/%m", errors='coerce')
                 df_c = df_c.dropna(subset=['Date']).sort_values('Date')
                 df_c['Cumul'] = df_c['Reel'].cumsum()
                 if not df_c.empty:
@@ -203,18 +204,7 @@ with tab3:
             
             df_res = pd.DataFrame(res)
             
-            # --- CALCUL DU SCORE VISUEL (ROUGE / VERT) ---
-            if 'Craft Fame' in df_res.columns:
-                def evaluer_fame(fame):
-                    if fame < SEUIL_FAME_MIN:
-                        return "🔴 Faible"
-                    else:
-                        return "🟢 Productif"
-                
-                # On ajoute la colonne 'Avis'
-                df_res['Avis'] = df_res['Craft Fame'].apply(evaluer_fame)
-
-            # Calcul Progression (Réf)
+            # --- CALCUL PROGRESSION + NOUVEAUX ---
             if ws_ref:
                 try:
                     ref_d = ws_ref.get_all_records()
@@ -222,11 +212,56 @@ with tab3:
                         df_ref = pd.DataFrame(ref_d)
                         if 'Pseudo' in df_ref.columns and 'Craft Fame' in df_ref.columns:
                             df_ref = df_ref[['Pseudo', 'Craft Fame']].rename(columns={'Craft Fame': 'Ref Fame'})
+                            # Conversion numérique stricte
                             df_ref['Ref Fame'] = pd.to_numeric(df_ref['Ref Fame'], errors='coerce').fillna(0)
+                            
                             df_res = pd.merge(df_res, df_ref, on='Pseudo', how='left')
-                            df_res['Ref Fame'] = df_res['Ref Fame'].fillna(0)
-                            df_res['Progression'] = df_res['Craft Fame'] - df_res['Ref Fame']
-                except: pass
+                            
+                            # Calculs
+                            # 1. Progression brute (chiffre)
+                            df_res['Progression_Value'] = df_res['Craft Fame'] - df_res['Ref Fame'].fillna(0)
+                            
+                            # 2. Gestion de l'affichage (Nouveau vs Chiffre)
+                            def get_display_prog(row):
+                                # Si Ref Fame est vide ou 0, c'est un nouveau joueur
+                                if pd.isna(row['Ref Fame']) or row['Ref Fame'] == 0:
+                                    return "✨ Nouveau"
+                                else:
+                                    # Sinon c'est le chiffre formaté
+                                    return row['Progression_Value']
+                            
+                            # 3. Gestion du Pourcentage
+                            def get_percent(row):
+                                if pd.isna(row['Ref Fame']) or row['Ref Fame'] == 0:
+                                    return "-" # Pas de % pour les nouveaux
+                                else:
+                                    if row['Ref Fame'] > 0:
+                                        pct = (row['Progression_Value'] / row['Ref Fame']) * 100
+                                        return f"+{pct:.1f}%" if pct > 0 else f"{pct:.1f}%"
+                                    return "-"
+
+                            df_res['Progression'] = df_res.apply(get_display_prog, axis=1)
+                            df_res['% Évol.'] = df_res.apply(get_percent, axis=1)
+                            
+                except Exception as e:
+                     # Si erreur, on remplit par défaut
+                     df_res['Progression'] = "✨ Nouveau"
+                     df_res['% Évol.'] = "-"
+                     df_res['Progression_Value'] = df_res['Craft Fame']
+
+            # --- AVIS ---
+            # On se base sur la valeur brute (Progression_Value) ou la Fame totale si nouveau
+            col_valeur = 'Progression_Value' if 'Progression_Value' in df_res.columns else 'Craft Fame'
+            
+            def evaluer_prod(valeur):
+                # Si c'est un texte (ex: erreur), on ignore
+                if isinstance(valeur, (int, float)):
+                     if valeur < SEUIL_FAME_MIN: return "🔴 Faible"
+                     else: return "🟢 Productif"
+                return "-"
+            
+            if col_valeur in df_res.columns:
+                df_res['Avis'] = df_res[col_valeur].apply(evaluer_prod)
 
             st.session_state['data_display'] = df_res
             st.session_state['display_type'] = "Scan Direct"
@@ -251,25 +286,31 @@ with tab3:
         st.caption(f"Affichage : **{st.session_state.get('display_type', '')}**")
         df_show = st.session_state['data_display'].copy()
         
-        # On recalcule l'avis si on charge depuis la référence (car la ref n'a pas la colonne Avis stockée)
-        if 'Avis' not in df_show.columns and 'Craft Fame' in df_show.columns:
-            df_show['Avis'] = df_show['Craft Fame'].apply(lambda x: "🔴 Faible" if x < SEUIL_FAME_MIN else "🟢 Productif")
+        if 'Avis' not in df_show.columns: df_show['Avis'] = "-"
+        if '% Évol.' not in df_show.columns: df_show['% Évol.'] = "-"
+
+        # FORMATAGE VISUEL DE LA PROGRESSION
+        # Si c'est un nombre, on applique le format espace. Si c'est "Nouveau", on laisse tel quel.
+        def format_prog_visuel(val):
+            if isinstance(val, (int, float)):
+                return format_nombre_entier(val)
+            return str(val)
+
+        if 'Progression' in df_show.columns:
+            df_show['Progression'] = df_show['Progression'].apply(format_prog_visuel)
 
         cols_conf = {
-            "Avis": st.column_config.TextColumn("Niveau"), # Nouvelle colonne
+            "Avis": st.column_config.TextColumn("Productivité"), 
             "Craft Fame": st.column_config.NumberColumn("Fame Totale", format="%d"),
-            "Progression": st.column_config.NumberColumn("📈 Progression", format="%+d"),
+            "Progression": st.column_config.TextColumn("📈 Progression"), # TextColumn pour accepter "Nouveau"
+            "% Évol.": st.column_config.TextColumn("% Évol."),
             "Guilde": st.column_config.TextColumn("Guilde"),
             "Statut": st.column_config.TextColumn("Statut")
         }
         
-        cols_to_show = [c for c in df_show.columns if c not in ['Ref Fame']]
-        
-        # On s'assure que Avis est affiché en premier pour la lisibilité
-        ordre_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', 'Guilde', 'Statut']
-        # On filtre pour ne garder que ceux qui existent vraiment dans le tableau
+        cols_to_show = [c for c in df_show.columns if c not in ['Ref Fame', 'Progression_Value']]
+        ordre_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Statut']
         cols_finales = [c for c in ordre_cols if c in df_show.columns]
-        
         df_show = df_show[cols_finales]
 
         st.dataframe(df_show, column_config=cols_conf, use_container_width=True)
