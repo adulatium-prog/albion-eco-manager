@@ -34,10 +34,69 @@ def format_nombre_entier(valeur):
     try: return "{:,.0f}".format(float(valeur)).replace(",", " ")
     except: return str(valeur)
 
+# --- NOUVELLE FONCTION : ANALYSE JSON (MAPPING) ---
+def analyser_donnees_json(json_text):
+    """
+    Lit le JSON des permissions, map les Alliances (Tag -> Nom)
+    et les Guildes (ID -> Nom) pour sortir une liste propre.
+    """
+    try:
+        data = json.loads(json_text)
+        
+        # 1. Mapping Alliances : Tag -> Nom
+        map_alliances = {}
+        if 'Alliances' in data:
+            for alliance in data['Alliances']:
+                tag = alliance.get('Tag')
+                name = alliance.get('Name')
+                if tag:
+                    map_alliances[tag] = name
+
+        # 2. Mapping Guildes : ID -> {Nom, AllianceTag}
+        map_guildes = {}
+        if 'Guilds' in data:
+            for guild in data['Guilds']:
+                g_id = guild.get('Id')
+                map_guildes[g_id] = {
+                    'Name': guild.get('Name', 'Inconnu'),
+                    'AllianceTag': guild.get('AllianceTag')
+                }
+
+        # 3. Traitement des Joueurs
+        joueurs_propres = []
+        if 'Players' in data:
+            for player in data['Players']:
+                p_name = player.get('Name')
+                g_id = player.get('GuildId')
+
+                # Résolution Guilde
+                info_guilde = map_guildes.get(g_id)
+                nom_guilde = "Sans Guilde"
+                nom_alliance = "-"
+
+                if info_guilde:
+                    nom_guilde = info_guilde['Name']
+                    tag_alliance = info_guilde['AllianceTag']
+                    
+                    # Résolution Alliance (Tag -> Nom)
+                    if tag_alliance:
+                        nom_alliance = map_alliances.get(tag_alliance, tag_alliance)
+
+                joueurs_propres.append({
+                    'Name': p_name,
+                    'Guild': nom_guilde,
+                    'Alliance': nom_alliance
+                })
+        
+        return joueurs_propres
+        
+    except json.JSONDecodeError:
+        return None # Ce n'est pas un JSON valide
+
 # --- API ALBION ---
 def get_albion_stats(pseudo):
     try:
-        # 1. RECHERCHE (On ne prend que l'ID et la Guilde ici)
+        # 1. RECHERCHE
         url_search = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         resp = requests.get(url_search, headers=headers)
@@ -54,13 +113,8 @@ def get_albion_stats(pseudo):
             
             if target:
                 player_id = target['Id']
-                guild = target.get('GuildName') or "Aucune"
                 
-                # IMPORTANT : On force l'alliance à "-" pour l'instant
-                # On ne fait pas confiance au résultat de la recherche qui contient souvent le TAG
-                alliance = "-"
-                
-                # 2. DÉTAILS (C'est ici qu'on veut le vrai NOM)
+                # 2. DÉTAILS
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
                 
@@ -68,13 +122,6 @@ def get_albion_stats(pseudo):
                 
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
-                    
-                    # On récupère strictement le AllianceName
-                    # Si l'API renvoie le Tag ici, c'est que le nom EST le Tag (on ne peut rien faire)
-                    nom_alliance = info.get('AllianceName')
-                    if nom_alliance:
-                        alliance = nom_alliance
-                    
                     ls = info.get('LifetimeStatistics', {})
                     crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
                     candidates = [
@@ -88,17 +135,16 @@ def get_albion_stats(pseudo):
                             
                 return {
                     "Pseudo": target['Name'], 
-                    "Guilde": guild, 
-                    "Alliance": alliance, 
                     "Craft Fame": craft_fame, 
                     "Statut": "✅ OK"
+                    # Note : On ne renvoie pas Guilde/Alliance ici, on utilisera celles du JSON si dispo
                 }
             else:
-                return {"Pseudo": pseudo, "Guilde": "-", "Alliance": "-", "Craft Fame": 0, "Statut": "❌ Introuvable"}
+                return {"Pseudo": pseudo, "Craft Fame": 0, "Statut": "❌ Introuvable"}
         else:
-            return {"Pseudo": pseudo, "Guilde": "-", "Alliance": "-", "Craft Fame": 0, "Statut": "⚠️ Erreur API"}
+            return {"Pseudo": pseudo, "Craft Fame": 0, "Statut": "⚠️ Erreur API"}
     except:
-        return {"Pseudo": pseudo, "Guilde": "-", "Alliance": "-", "Craft Fame": 0, "Statut": "Erreur Script"}
+        return {"Pseudo": pseudo, "Craft Fame": 0, "Statut": "Erreur Script"}
 
 # --- CONNEXION ---
 try:
@@ -190,7 +236,7 @@ with tab3:
     col_input, col_action = st.columns([2, 1])
     with col_input:
         if 'json_input' not in st.session_state: st.session_state['json_input'] = ""
-        raw_text = st.text_area("Colle TOUS les JSON ici", value=st.session_state['json_input'], height=100, key="json_area")
+        raw_text = st.text_area("Colle le JSON des perms ici", value=st.session_state['json_input'], height=150, key="json_area")
     with col_action:
         st.write("### Actions")
         scan_btn = st.button("🚀 Lancer le Scan", type="primary", use_container_width=True)
@@ -210,19 +256,58 @@ with tab3:
             except: pass
 
     if scan_btn and raw_text:
-        matches = re.findall(r'"Player:([^"]+)"', raw_text)
-        pseudos = list(set(matches))
-        if not pseudos: st.warning("Aucun joueur trouvé.")
+        # 1. ESSAI D'ANALYSE JSON (La nouvelle méthode)
+        liste_joueurs_json = analyser_donnees_json(raw_text)
+        
+        pseudos_a_traiter = []
+        mode_json = False
+
+        if liste_joueurs_json:
+            st.success("✅ JSON valide détecté ! Mapping des Guildes et Alliances activé.")
+            pseudos_a_traiter = liste_joueurs_json # C'est une liste de dicts {Name, Guild, Alliance}
+            mode_json = True
         else:
-            st.info(f"Analyse de {len(pseudos)} joueurs...")
+            # Fallback : Si ce n'est pas un JSON, on cherche juste les noms avec Regex
+            st.warning("⚠️ Format JSON non reconnu, passage en mode texte simple (Regex).")
+            matches = re.findall(r'"Player:([^"]+)"', raw_text)
+            # On crée des objets simples pour garder la compatibilité
+            pseudos_a_traiter = [{'Name': p, 'Guild': '-', 'Alliance': '-'} for p in list(set(matches))]
+
+        if not pseudos_a_traiter:
+            st.warning("Aucun joueur trouvé.")
+        else:
+            st.info(f"Analyse de {len(pseudos_a_traiter)} joueurs...")
             res = []
             barre = st.progress(0)
             status = st.empty()
-            for i, p in enumerate(pseudos):
-                status.text(f"Scan de {p}...")
-                res.append(get_albion_stats(p))
+            
+            for i, p_obj in enumerate(pseudos_a_traiter):
+                pseudo = p_obj['Name']
+                status.text(f"Scan de {pseudo}...")
+                
+                # Appel API pour la Fame uniquement
+                api_data = get_albion_stats(pseudo)
+                
+                # Construction du résultat final
+                donnees_finales = {
+                    "Pseudo": api_data['Pseudo'],
+                    "Craft Fame": api_data['Craft Fame'],
+                    "Statut": api_data['Statut']
+                }
+                
+                # SI on est en mode JSON, on écrase les infos de guilde/alliance avec celles du JSON (PROPRES)
+                # SINON on met des tirets (car l'API est souvent moins précise sur les tags)
+                if mode_json:
+                    donnees_finales["Guilde"] = p_obj['Guild']
+                    donnees_finales["Alliance"] = p_obj['Alliance']
+                else:
+                    donnees_finales["Guilde"] = "-"
+                    donnees_finales["Alliance"] = "-"
+                
+                res.append(donnees_finales)
                 time.sleep(0.15)
-                barre.progress((i+1)/len(pseudos))
+                barre.progress((i+1)/len(pseudos_a_traiter))
+            
             barre.empty()
             status.empty()
             
@@ -297,10 +382,14 @@ with tab3:
             
             # Analyse Guildes
             guild_counts = df_analysis[df_analysis['Guilde'] != "Aucune"]['Guilde'].value_counts()
+            # On filtre aussi "Sans Guilde" et "-"
+            guild_counts = guild_counts.drop(['Sans Guilde', '-'], errors='ignore')
             alertes_guildes = guild_counts[guild_counts > 1]
             
             # Analyse Alliances
             alliance_groups = df_analysis[df_analysis['Alliance'] != "-"].groupby('Alliance')['Guilde'].nunique()
+            # On filtre "Sans Alliance" et "-"
+            alliance_groups = alliance_groups.drop(['Sans Alliance', '-'], errors='ignore')
             alertes_alliances = alliance_groups[alliance_groups > 1]
             
             if not alertes_guildes.empty or not alertes_alliances.empty:
