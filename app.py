@@ -22,7 +22,7 @@ NOM_DU_FICHIER_SHEET = "Arion Plot"
 NOM_ONGLET_JOURNAL = "Journal_App"
 NOM_ONGLET_REF = "Reference_Craft"
 
-# 🎯 SEUIL DE PROGRESSION (4 Millions)
+# 🎯 SEUIL DE PROGRESSION
 SEUIL_FAME_MIN = 4000000 
 
 # --- FONCTIONS FORMATAGE ---
@@ -34,69 +34,10 @@ def format_nombre_entier(valeur):
     try: return "{:,.0f}".format(float(valeur)).replace(",", " ")
     except: return str(valeur)
 
-# --- NOUVELLE FONCTION : ANALYSE JSON (MAPPING) ---
-def analyser_donnees_json(json_text):
-    """
-    Lit le JSON des permissions, map les Alliances (Tag -> Nom)
-    et les Guildes (ID -> Nom) pour sortir une liste propre.
-    """
-    try:
-        data = json.loads(json_text)
-        
-        # 1. Mapping Alliances : Tag -> Nom
-        map_alliances = {}
-        if 'Alliances' in data:
-            for alliance in data['Alliances']:
-                tag = alliance.get('Tag')
-                name = alliance.get('Name')
-                if tag:
-                    map_alliances[tag] = name
-
-        # 2. Mapping Guildes : ID -> {Nom, AllianceTag}
-        map_guildes = {}
-        if 'Guilds' in data:
-            for guild in data['Guilds']:
-                g_id = guild.get('Id')
-                map_guildes[g_id] = {
-                    'Name': guild.get('Name', 'Inconnu'),
-                    'AllianceTag': guild.get('AllianceTag')
-                }
-
-        # 3. Traitement des Joueurs
-        joueurs_propres = []
-        if 'Players' in data:
-            for player in data['Players']:
-                p_name = player.get('Name')
-                g_id = player.get('GuildId')
-
-                # Résolution Guilde
-                info_guilde = map_guildes.get(g_id)
-                nom_guilde = "Sans Guilde"
-                nom_alliance = "-"
-
-                if info_guilde:
-                    nom_guilde = info_guilde['Name']
-                    tag_alliance = info_guilde['AllianceTag']
-                    
-                    # Résolution Alliance (Tag -> Nom)
-                    if tag_alliance:
-                        nom_alliance = map_alliances.get(tag_alliance, tag_alliance)
-
-                joueurs_propres.append({
-                    'Name': p_name,
-                    'Guild': nom_guilde,
-                    'Alliance': nom_alliance
-                })
-        
-        return joueurs_propres
-        
-    except json.JSONDecodeError:
-        return None # Ce n'est pas un JSON valide
-
 # --- API ALBION ---
 def get_albion_stats(pseudo):
     try:
-        # 1. RECHERCHE
+        # 1. RECHERCHE (On récupère l'ID, la Guilde et l'Alliance ici)
         url_search = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         resp = requests.get(url_search, headers=headers)
@@ -105,6 +46,8 @@ def get_albion_stats(pseudo):
             data = resp.json()
             players = data.get('players', [])
             target = None
+            
+            # Recherche exacte
             for p in players:
                 if p['Name'].lower() == pseudo.lower():
                     target = p
@@ -113,8 +56,10 @@ def get_albion_stats(pseudo):
             
             if target:
                 player_id = target['Id']
-                
-                # 2. DÉTAILS
+                guild_name = target.get('GuildName', 'Aucune') or "Aucune"
+                alliance_name = target.get('AllianceName', '-') or "-"
+
+                # 2. DÉTAILS (Pour la Fame)
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
                 
@@ -122,6 +67,9 @@ def get_albion_stats(pseudo):
                 
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
+                    # Parfois l'alliance est mieux renseignée ici
+                    if info.get('AllianceName'): alliance_name = info.get('AllianceName')
+
                     ls = info.get('LifetimeStatistics', {})
                     crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
                     candidates = [
@@ -135,16 +83,17 @@ def get_albion_stats(pseudo):
                             
                 return {
                     "Pseudo": target['Name'], 
+                    "Guilde": guild_name,
+                    "Alliance": alliance_name,
                     "Craft Fame": craft_fame, 
                     "Statut": "✅ OK"
-                    # Note : On ne renvoie pas Guilde/Alliance ici, on utilisera celles du JSON si dispo
                 }
             else:
-                return {"Pseudo": pseudo, "Craft Fame": 0, "Statut": "❌ Introuvable"}
+                return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Statut": "❌ Introuvable"}
         else:
-            return {"Pseudo": pseudo, "Craft Fame": 0, "Statut": "⚠️ Erreur API"}
+            return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Statut": "⚠️ Erreur API"}
     except:
-        return {"Pseudo": pseudo, "Craft Fame": 0, "Statut": "Erreur Script"}
+        return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Statut": "Erreur Script"}
 
 # --- CONNEXION ---
 try:
@@ -232,11 +181,11 @@ with tab2:
 
 # --- TAB 3 : SUIVI CRAFT ---
 with tab3:
-    st.subheader("🕵️ Suivi de Production")
+    st.subheader("🕵️ Suivi de Production (Format Droits d'Accès)")
     col_input, col_action = st.columns([2, 1])
     with col_input:
         if 'json_input' not in st.session_state: st.session_state['json_input'] = ""
-        raw_text = st.text_area("Colle le JSON des perms ici", value=st.session_state['json_input'], height=150, key="json_area")
+        raw_text = st.text_area("Colle le texte 'Access Rights' ici (Ex: {Player:V3L0...})", value=st.session_state['json_input'], height=150, key="json_area")
     with col_action:
         st.write("### Actions")
         scan_btn = st.button("🚀 Lancer le Scan", type="primary", use_container_width=True)
@@ -256,57 +205,31 @@ with tab3:
             except: pass
 
     if scan_btn and raw_text:
-        # 1. ESSAI D'ANALYSE JSON (La nouvelle méthode)
-        liste_joueurs_json = analyser_donnees_json(raw_text)
-        
-        pseudos_a_traiter = []
-        mode_json = False
+        # --- LOGIQUE D'EXTRACTION ---
+        # On utilise une Regex car le format "Player:Nom" est unique et facile à attraper
+        # Cela marche même si le JSON est mal formé ou copié plusieurs fois
+        matches = re.findall(r'"Player:([^"]+)"', raw_text)
+        # On retire les doublons éventuels
+        pseudos_uniques = list(set(matches))
 
-        if liste_joueurs_json:
-            st.success("✅ JSON valide détecté ! Mapping des Guildes et Alliances activé.")
-            pseudos_a_traiter = liste_joueurs_json # C'est une liste de dicts {Name, Guild, Alliance}
-            mode_json = True
+        if not pseudos_uniques:
+            st.warning("⚠️ Aucun format 'Player:Nom' trouvé dans le texte.")
         else:
-            # Fallback : Si ce n'est pas un JSON, on cherche juste les noms avec Regex
-            st.warning("⚠️ Format JSON non reconnu, passage en mode texte simple (Regex).")
-            matches = re.findall(r'"Player:([^"]+)"', raw_text)
-            # On crée des objets simples pour garder la compatibilité
-            pseudos_a_traiter = [{'Name': p, 'Guild': '-', 'Alliance': '-'} for p in list(set(matches))]
-
-        if not pseudos_a_traiter:
-            st.warning("Aucun joueur trouvé.")
-        else:
-            st.info(f"Analyse de {len(pseudos_a_traiter)} joueurs...")
+            st.info(f"Analyse de {len(pseudos_uniques)} joueurs trouvés...")
             res = []
             barre = st.progress(0)
             status = st.empty()
             
-            for i, p_obj in enumerate(pseudos_a_traiter):
-                pseudo = p_obj['Name']
-                status.text(f"Scan de {pseudo}...")
+            for i, p_name in enumerate(pseudos_uniques):
+                status.text(f"Scan de {p_name}...")
                 
-                # Appel API pour la Fame uniquement
-                api_data = get_albion_stats(pseudo)
+                # C'EST ICI QUE L'API FAIT LE BOULOT
+                # Le fichier ne donne pas la guilde, donc on laisse l'API la trouver
+                api_data = get_albion_stats(p_name)
                 
-                # Construction du résultat final
-                donnees_finales = {
-                    "Pseudo": api_data['Pseudo'],
-                    "Craft Fame": api_data['Craft Fame'],
-                    "Statut": api_data['Statut']
-                }
-                
-                # SI on est en mode JSON, on écrase les infos de guilde/alliance avec celles du JSON (PROPRES)
-                # SINON on met des tirets (car l'API est souvent moins précise sur les tags)
-                if mode_json:
-                    donnees_finales["Guilde"] = p_obj['Guild']
-                    donnees_finales["Alliance"] = p_obj['Alliance']
-                else:
-                    donnees_finales["Guilde"] = "-"
-                    donnees_finales["Alliance"] = "-"
-                
-                res.append(donnees_finales)
-                time.sleep(0.15)
-                barre.progress((i+1)/len(pseudos_a_traiter))
+                res.append(api_data)
+                time.sleep(0.12) # Petite pause pour pas spammer l'API
+                barre.progress((i+1)/len(pseudos_uniques))
             
             barre.empty()
             status.empty()
@@ -355,7 +278,7 @@ with tab3:
                 df_res['Avis'] = df_res[col_valeur].apply(evaluer_prod)
 
             st.session_state['data_display'] = df_res
-            st.session_state['display_type'] = "Scan Direct"
+            st.session_state['display_type'] = "Scan Droits"
             st.success("Terminé !")
 
     if save_ref_btn:
@@ -382,25 +305,23 @@ with tab3:
             
             # Analyse Guildes
             guild_counts = df_analysis[df_analysis['Guilde'] != "Aucune"]['Guilde'].value_counts()
-            # On filtre aussi "Sans Guilde" et "-"
-            guild_counts = guild_counts.drop(['Sans Guilde', '-'], errors='ignore')
+            guild_counts = guild_counts.drop(['Sans Guilde', '-', '?'], errors='ignore')
             alertes_guildes = guild_counts[guild_counts > 1]
             
             # Analyse Alliances
             alliance_groups = df_analysis[df_analysis['Alliance'] != "-"].groupby('Alliance')['Guilde'].nunique()
-            # On filtre "Sans Alliance" et "-"
-            alliance_groups = alliance_groups.drop(['Sans Alliance', '-'], errors='ignore')
+            alliance_groups = alliance_groups.drop(['Sans Alliance', '-', '?'], errors='ignore')
             alertes_alliances = alliance_groups[alliance_groups > 1]
             
             if not alertes_guildes.empty or not alertes_alliances.empty:
-                st.info("📢 **Regroupements détectés :**")
+                st.info("📢 **Regroupements détectés (via API) :**")
                 cols_alerts = st.columns(2)
                 col_idx = 0
                 
                 for guilde_nom, count in alertes_guildes.items():
                     with cols_alerts[col_idx % 2]:
                         st.button(f"🏢 Guilde '{guilde_nom}' : {count} joueurs", 
-                                  help=f"Conseil : Ajoutez directement la guilde.",
+                                  key=f"btn_guild_{col_idx}",
                                   use_container_width=True)
                     col_idx += 1
                 
@@ -408,7 +329,7 @@ with tab3:
                     nb_joueurs_alli = len(df_analysis[df_analysis['Alliance'] == alliance_nom])
                     with cols_alerts[col_idx % 2]:
                         st.button(f"🤝 Alliance '{alliance_nom}' : {count_guildes} guildes ({nb_joueurs_alli} joueurs)",
-                                  help=f"Conseil : Plusieurs guildes de cette alliance sont présentes.",
+                                  key=f"btn_alli_{col_idx}",
                                   use_container_width=True)
                     col_idx += 1
                 st.write("---")
