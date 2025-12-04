@@ -1,13 +1,13 @@
 import streamlit as st
 import gspread
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import requests
 import time
 import json
 import re
 from datetime import datetime
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 # --- SÉCURITÉ ---
 if "app_password" in st.secrets:
@@ -21,11 +21,9 @@ if "app_password" in st.secrets:
 NOM_DU_FICHIER_SHEET = "Arion Plot"
 NOM_ONGLET_JOURNAL = "Journal_App"
 NOM_ONGLET_REF = "Reference_Craft"
-
-# 🎯 SEUIL DE PROGRESSION
 SEUIL_FAME_MIN = 4000000 
 
-# --- FONCTIONS FORMATAGE ---
+# --- FONCTIONS UTILITAIRES ---
 def format_monetaire(valeur):
     try: return "{:,.2f}".format(float(valeur)).replace(",", " ").replace(".", ",")
     except: return str(valeur)
@@ -35,19 +33,21 @@ def format_nombre_entier(valeur):
     except: return str(valeur)
 
 # --- API ALBION ---
-def get_albion_stats(pseudo):
+def get_player_stats(pseudo):
+    """ 
+    Récupère les stats et surtout la Guilde/Alliance actuelle pour vérifier les doublons.
+    """
     try:
-        # 1. RECHERCHE (On récupère l'ID, la Guilde et l'Alliance ici)
         url_search = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url_search, headers=headers)
         
         if resp.status_code == 200:
             data = resp.json()
             players = data.get('players', [])
-            target = None
             
             # Recherche exacte
+            target = None
             for p in players:
                 if p['Name'].lower() == pseudo.lower():
                     target = p
@@ -56,26 +56,23 @@ def get_albion_stats(pseudo):
             
             if target:
                 player_id = target['Id']
-                guild_name = target.get('GuildName', 'Aucune') or "Aucune"
-                alliance_name = target.get('AllianceName', '-') or "-"
+                
+                # Noms officiels (API)
+                guild_name = target.get('GuildName') or "Aucune"
+                alliance_name = target.get('AllianceName') or "-"
 
-                # 2. DÉTAILS (Pour la Fame)
+                # Appel détail pour la Fame
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
-                
                 craft_fame = 0
                 
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
-                    # Parfois l'alliance est mieux renseignée ici
                     if info.get('AllianceName'): alliance_name = info.get('AllianceName')
-
+                    
                     ls = info.get('LifetimeStatistics', {})
                     crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
-                    candidates = [
-                        info.get('CraftFame'), info.get('CraftingFame'),
-                        crafting.get('CraftFame'), crafting.get('Total'), crafting.get('craftFame')
-                    ]
+                    candidates = [info.get('CraftFame'), crafting.get('Total'), crafting.get('craftFame')]
                     for val in candidates:
                         if isinstance(val, (int, float)):
                             craft_fame = val
@@ -86,14 +83,10 @@ def get_albion_stats(pseudo):
                     "Guilde": guild_name,
                     "Alliance": alliance_name,
                     "Craft Fame": craft_fame, 
-                    "Statut": "✅ OK"
+                    "Trouve": True
                 }
-            else:
-                return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Statut": "❌ Introuvable"}
-        else:
-            return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Statut": "⚠️ Erreur API"}
-    except:
-        return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Statut": "Erreur Script"}
+        return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Trouve": False}
+    except: return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Trouve": False}
 
 # --- CONNEXION ---
 try:
@@ -103,25 +96,17 @@ try:
         gc = gspread.service_account_from_dict(dict_secrets)
     else:
         gc = gspread.service_account(filename='service_account.json')
-        
     try: sh = gc.open(NOM_DU_FICHIER_SHEET)
-    except: 
-        st.error(f"❌ Impossible d'ouvrir '{NOM_DU_FICHIER_SHEET}'.")
-        st.stop()
-
+    except: st.error(f"❌ Impossible d'ouvrir '{NOM_DU_FICHIER_SHEET}'."); st.stop()
     worksheet = sh.worksheet(NOM_ONGLET_JOURNAL)
     try: ws_ref = sh.worksheet(NOM_ONGLET_REF)
     except: ws_ref = None
-
-except Exception as e:
-    st.error(f"❌ Erreur connexion : {e}")
-    st.stop()
+except Exception as e: st.error(f"❌ Erreur connexion : {e}"); st.stop()
 
 # --- INTERFACE ---
 st.set_page_config(page_title="Albion Manager", page_icon="💰", layout="wide")
 st.title("🏹 Albion Economy Manager (EU)")
-
-tab1, tab2, tab3 = st.tabs(["✍️ Saisie", "📊 Analyse", "🔍 Suivi Craft"])
+tab1, tab2, tab3 = st.tabs(["✍️ Saisie", "📊 Analyse", "🔍 Détection Doublons"])
 
 # --- TAB 1 : SAISIE ---
 with tab1:
@@ -129,19 +114,14 @@ with tab1:
     with st.form("ajout"):
         c1, c2 = st.columns(2)
         with c1: type_op = st.radio("Type", ["Recette (+)", "Dépense (-)"], horizontal=True)
-        with c2: 
-            plots = ["Cook", "Hunter", "Weaver", "Mage", "Autre"]
-            batiment = st.selectbox("Plot", plots)
+        with c2: batiment = st.selectbox("Plot", ["Cook", "Hunter", "Weaver", "Mage", "Autre"])
         montant = st.number_input("Montant", step=10000, format="%d")
         note = st.text_input("Note")
         if st.form_submit_button("Valider"):
-            final = montant 
-            date = datetime.now().strftime("%d/%m")
             try:
-                worksheet.append_row([date, batiment, type_op, final, note])
-                st.success(f"✅ Enregistré : {format_monetaire(final)} Silver ({date})")
-                st.cache_data.clear()
-            except Exception as e: st.error(f"Erreur : {e}")
+                worksheet.append_row([datetime.now().strftime("%d/%m"), batiment, type_op, montant, note])
+                st.success("✅ Enregistré"); st.cache_data.clear()
+            except Exception as e: st.error(str(e))
 
 # --- TAB 2 : ANALYSE ---
 with tab2:
@@ -150,91 +130,87 @@ with tab2:
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
-            
-            if 'Montant' in df.columns and 'Type' in df.columns:
-                df['Reel'] = df.apply(lambda x: -x['Montant'] if "Dépense" in str(x['Type']) else x['Montant'], axis=1)
-                total = df['Reel'].sum()
-                st.metric(label="💰 Trésorerie Totale", value=f"{format_monetaire(total)} Silver", delta=f"{total:,.0f} (Global)")
-            
-            st.write("---")
-            if 'Date' in df.columns:
-                df_c = df.copy()
-                df_c['Date'] = pd.to_datetime(df_c['Date'], dayfirst=True, format="%d/%m", errors='coerce')
-                df_c = df_c.dropna(subset=['Date']).sort_values('Date')
-                df_c['Cumul'] = df_c['Reel'].cumsum()
-                if not df_c.empty:
-                    st.caption("Évolution de la fortune")
-                    fig, ax = plt.subplots(figsize=(10, 3))
-                    dernier_montant = df_c['Cumul'].iloc[-1]
-                    couleur_ligne = '#00CC96' if dernier_montant >= 0 else '#FF4B4B'
-                    ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
-                    ax.plot(df_c['Date'], df_c['Cumul'], color=couleur_ligne, marker='o')
-                    ax.grid(True, alpha=0.3)
-                    ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
-                    ax.ticklabel_format(style='plain', axis='y')
-                    st.pyplot(fig)
-            
-            df_disp = df.copy()
-            if 'Montant' in df_disp.columns: df_disp['Montant'] = df_disp['Montant'].apply(format_monetaire)
-            st.dataframe(df_disp.tail(10).sort_index(ascending=False), use_container_width=True)
-    except Exception as e: st.warning(f"Chargement... {e}")
+            df['Reel'] = df.apply(lambda x: -x['Montant'] if "Dépense" in str(x['Type']) else x['Montant'], axis=1)
+            total = df['Reel'].sum()
+            st.metric("💰 Trésorerie", f"{format_monetaire(total)}", delta=f"{total:,.0f}")
+            st.dataframe(df.tail(10), use_container_width=True)
+    except: st.warning("Pas de données.")
 
-# --- TAB 3 : SUIVI CRAFT ---
+# --- TAB 3 : SCAN JOUEURS & DOUBLONS ---
 with tab3:
-    st.subheader("🕵️ Suivi de Production (Format Droits d'Accès)")
+    st.subheader("🕵️ Scan des Joueurs & Détection des Doublons")
+    st.info("💡 Ce scan vérifie si les joueurs listés individuellement ('Player:...') sont déjà couverts par une Guilde ou une Alliance présente dans la liste.")
+    
     col_input, col_action = st.columns([2, 1])
     with col_input:
         if 'json_input' not in st.session_state: st.session_state['json_input'] = ""
-        raw_text = st.text_area("Colle le texte 'Access Rights' ici (Ex: {Player:V3L0...})", value=st.session_state['json_input'], height=150, key="json_area")
+        raw_text = st.text_area("Colle les permissions ici", value=st.session_state['json_input'], height=150)
     with col_action:
         st.write("### Actions")
-        scan_btn = st.button("🚀 Lancer le Scan", type="primary", use_container_width=True)
-        st.write("")
-        save_ref_btn = st.button("💾 Sauvegarder comme Réf.", help="Écrase l'onglet Référence", use_container_width=True)
+        scan_btn = st.button("🚀 Lancer l'Analyse", type="primary", use_container_width=True)
+        save_ref_btn = st.button("💾 Sauvegarder Réf.", use_container_width=True)
 
     if 'data_display' not in st.session_state:
         st.session_state['data_display'] = None
         if ws_ref:
             try:
                 ref_data = ws_ref.get_all_records()
-                if ref_data:
-                    df_load = pd.DataFrame(ref_data)
-                    if 'Pseudo' in df_load.columns:
-                        st.session_state['data_display'] = df_load
-                        st.session_state['display_type'] = "Référence"
+                if ref_data: st.session_state['data_display'] = pd.DataFrame(ref_data)
             except: pass
 
     if scan_btn and raw_text:
-        # --- LOGIQUE D'EXTRACTION ---
-        # On utilise une Regex car le format "Player:Nom" est unique et facile à attraper
-        # Cela marche même si le JSON est mal formé ou copié plusieurs fois
-        matches = re.findall(r'"Player:([^"]+)"', raw_text)
-        # On retire les doublons éventuels
-        pseudos_uniques = list(set(matches))
+        # 1. Mise en mémoire des Groupes (Guildes/Alliances) présents dans le texte
+        # On stocke en minuscule pour comparer sans souci
+        memoire_guildes_input = set(g.strip().lower() for g in re.findall(r'"Guild:([^"]+)"', raw_text))
+        memoire_alliances_input = set(a.strip().lower() for a in re.findall(r'"Alliance:([^"]+)"', raw_text))
+        
+        raw_players = list(set(re.findall(r'"Player:([^"]+)"', raw_text)))
 
-        if not pseudos_uniques:
-            st.warning("⚠️ Aucun format 'Player:Nom' trouvé dans le texte.")
+        if memoire_guildes_input or memoire_alliances_input:
+            st.toast(f"ℹ️ Comparaison avec : {len(memoire_guildes_input)} Guildes et {len(memoire_alliances_input)} Alliances trouvées dans le texte.")
+        
+        if not raw_players:
+            st.warning("Aucun joueur trouvé.")
         else:
-            st.info(f"Analyse de {len(pseudos_uniques)} joueurs trouvés...")
-            res = []
+            resultats = []
             barre = st.progress(0)
             status = st.empty()
             
-            for i, p_name in enumerate(pseudos_uniques):
-                status.text(f"Scan de {p_name}...")
+            for i, p_name in enumerate(raw_players):
+                status.text(f"Analyse : {p_name}...")
                 
-                # C'EST ICI QUE L'API FAIT LE BOULOT
-                # Le fichier ne donne pas la guilde, donc on laisse l'API la trouver
-                api_data = get_albion_stats(p_name)
+                # Appel API
+                infos = get_player_stats(p_name)
                 
-                res.append(api_data)
-                time.sleep(0.12) # Petite pause pour pas spammer l'API
-                barre.progress((i+1)/len(pseudos_uniques))
-            
+                # LOGIQUE DE DÉTECTION DE DOUBLON
+                status_doublon = "✅ Unique" # Par défaut
+                detail_doublon = ""
+
+                if infos['Trouve']:
+                    g_api = infos['Guilde'].lower()
+                    a_api = infos['Alliance'].lower()
+                    
+                    # Est-ce que la guilde du joueur est dans le texte collé ?
+                    if g_api in memoire_guildes_input:
+                        status_doublon = "⚠️ Doublon (Guilde)"
+                        detail_doublon = f"Déjà inclus via guilde '{infos['Guilde']}'"
+                    
+                    # Est-ce que l'alliance du joueur est dans le texte collé ?
+                    elif a_api in memoire_alliances_input:
+                        status_doublon = "⚠️ Doublon (Alliance)"
+                        detail_doublon = f"Déjà inclus via alliance '{infos['Alliance']}'"
+
+                infos['Analyse'] = status_doublon
+                infos['Détail'] = detail_doublon
+                
+                resultats.append(infos)
+                time.sleep(0.12)
+                barre.progress((i+1)/len(raw_players))
+
             barre.empty()
-            status.empty()
-            
-            df_res = pd.DataFrame(res)
+            status.success(f"Terminé !")
+
+            df_res = pd.DataFrame(resultats)
             
             # --- CALCUL PROGRESSION ---
             if ws_ref:
@@ -245,122 +221,50 @@ with tab3:
                         if 'Pseudo' in df_ref.columns and 'Craft Fame' in df_ref.columns:
                             df_ref = df_ref[['Pseudo', 'Craft Fame']].rename(columns={'Craft Fame': 'Ref Fame'})
                             df_ref['Ref Fame'] = pd.to_numeric(df_ref['Ref Fame'], errors='coerce').fillna(0)
-                            
                             df_res = pd.merge(df_res, df_ref, on='Pseudo', how='left')
                             df_res['Progression_Value'] = df_res['Craft Fame'] - df_res['Ref Fame'].fillna(0)
-                            
-                            def get_display_prog(row):
-                                if pd.isna(row['Ref Fame']) or row['Ref Fame'] == 0: return "✨ Nouveau"
-                                return row['Progression_Value']
-                            
-                            def get_percent(row):
-                                if pd.isna(row['Ref Fame']) or row['Ref Fame'] == 0: return "-"
-                                if row['Ref Fame'] > 0:
-                                    pct = (row['Progression_Value'] / row['Ref Fame']) * 100
-                                    return f"+{pct:.1f}%" if pct > 0 else f"{pct:.1f}%"
-                                return "-"
+                            df_res['Progression'] = df_res.apply(lambda x: x['Progression_Value'] if x['Ref Fame'] > 0 else "✨ Nouveau", axis=1)
+                            df_res['% Évol.'] = df_res.apply(lambda x: f"{(x['Progression_Value']/x['Ref Fame'])*100:.1f}%" if x['Ref Fame'] > 0 else "-", axis=1)
+                except: pass
 
-                            df_res['Progression'] = df_res.apply(get_display_prog, axis=1)
-                            df_res['% Évol.'] = df_res.apply(get_percent, axis=1)
-                except: 
-                     df_res['Progression'] = "✨ Nouveau"
-                     df_res['% Évol.'] = "-"
-                     df_res['Progression_Value'] = df_res['Craft Fame']
+            if 'Progression' not in df_res.columns: df_res['Progression'] = "✨ Nouveau"; df_res['% Évol.'] = "-"
 
             # --- AVIS ---
-            col_valeur = 'Progression_Value' if 'Progression_Value' in df_res.columns else 'Craft Fame'
-            def evaluer_prod(valeur):
-                if isinstance(valeur, (int, float)):
-                     if valeur < SEUIL_FAME_MIN: return "🔴 Faible"
-                     else: return "🟢 Productif"
-                return "-"
-            if col_valeur in df_res.columns:
-                df_res['Avis'] = df_res[col_valeur].apply(evaluer_prod)
+            df_res['Avis'] = df_res['Craft Fame'].apply(lambda x: "🟢 Productif" if x > SEUIL_FAME_MIN else "🔴 Faible")
 
             st.session_state['data_display'] = df_res
-            st.session_state['display_type'] = "Scan Droits"
-            st.success("Terminé !")
+            st.session_state['display_type'] = "Analyse Doublons"
 
-    if save_ref_btn:
-        if st.session_state['data_display'] is not None and not st.session_state['data_display'].empty:
-            if ws_ref:
-                try:
-                    df_s = st.session_state['data_display']
-                    if 'Pseudo' in df_s.columns and 'Craft Fame' in df_s.columns:
-                        df_s = df_s[['Pseudo', 'Craft Fame']]
-                        ws_ref.clear()
-                        ws_ref.update([df_s.columns.values.tolist()] + df_s.values.tolist())
-                        st.success("✅ Référence sauvegardée !")
-                        st.session_state['display_type'] = "Référence"
-                except Exception as e: st.error(f"Erreur : {e}")
-        else: st.warning("Rien à sauvegarder.")
+    # SAUVEGARDE
+    if save_ref_btn and st.session_state['data_display'] is not None:
+        try:
+            df_s = st.session_state['data_display'][['Pseudo', 'Craft Fame']]
+            ws_ref.clear(); ws_ref.update([df_s.columns.values.tolist()] + df_s.values.tolist())
+            st.success("✅ Référence mise à jour !")
+        except Exception as e: st.error(f"Erreur: {e}")
 
-    st.divider()
-    
-    # --- 📢 INTELLIGENCE DES GROUPES ---
+    # AFFICHAGE
     if st.session_state['data_display'] is not None:
-        df_analysis = st.session_state['data_display'].copy()
-        
-        if 'Alliance' in df_analysis.columns and 'Guilde' in df_analysis.columns:
-            
-            # Analyse Guildes
-            guild_counts = df_analysis[df_analysis['Guilde'] != "Aucune"]['Guilde'].value_counts()
-            guild_counts = guild_counts.drop(['Sans Guilde', '-', '?'], errors='ignore')
-            alertes_guildes = guild_counts[guild_counts > 1]
-            
-            # Analyse Alliances
-            alliance_groups = df_analysis[df_analysis['Alliance'] != "-"].groupby('Alliance')['Guilde'].nunique()
-            alliance_groups = alliance_groups.drop(['Sans Alliance', '-', '?'], errors='ignore')
-            alertes_alliances = alliance_groups[alliance_groups > 1]
-            
-            if not alertes_guildes.empty or not alertes_alliances.empty:
-                st.info("📢 **Regroupements détectés (via API) :**")
-                cols_alerts = st.columns(2)
-                col_idx = 0
-                
-                for guilde_nom, count in alertes_guildes.items():
-                    with cols_alerts[col_idx % 2]:
-                        st.button(f"🏢 Guilde '{guilde_nom}' : {count} joueurs", 
-                                  key=f"btn_guild_{col_idx}",
-                                  use_container_width=True)
-                    col_idx += 1
-                
-                for alliance_nom, count_guildes in alertes_alliances.items():
-                    nb_joueurs_alli = len(df_analysis[df_analysis['Alliance'] == alliance_nom])
-                    with cols_alerts[col_idx % 2]:
-                        st.button(f"🤝 Alliance '{alliance_nom}' : {count_guildes} guildes ({nb_joueurs_alli} joueurs)",
-                                  key=f"btn_alli_{col_idx}",
-                                  use_container_width=True)
-                    col_idx += 1
-                st.write("---")
-
-        st.caption(f"Affichage : **{st.session_state.get('display_type', '')}**")
         df_show = st.session_state['data_display'].copy()
         
-        if 'Avis' not in df_show.columns: df_show['Avis'] = "-"
-        if '% Évol.' not in df_show.columns: df_show['% Évol.'] = "-"
+        # Filtres
+        c_search, c_filter = st.columns(2)
+        with c_search: search = st.text_input("🔎 Filtrer", "")
+        with c_filter: show_only_dup = st.checkbox("Montrer uniquement les Doublons", False)
 
-        def format_prog_visuel(val):
-            if isinstance(val, (int, float)): return format_nombre_entier(val)
-            return str(val)
-
-        if 'Progression' in df_show.columns:
-            df_show['Progression'] = df_show['Progression'].apply(format_prog_visuel)
+        if search: 
+            df_show = df_show[df_show['Pseudo'].str.contains(search, case=False) | df_show['Guilde'].str.contains(search, case=False)]
+        
+        if show_only_dup:
+             df_show = df_show[df_show['Analyse'].str.contains("Doublon")]
 
         cols_conf = {
-            "Avis": st.column_config.TextColumn("Productivité"), 
             "Craft Fame": st.column_config.NumberColumn("Fame Totale", format="%d"),
-            "Progression": st.column_config.TextColumn("📈 Progression"),
-            "% Évol.": st.column_config.TextColumn("% Évol."),
+            "Progression": st.column_config.TextColumn("Progression"),
             "Guilde": st.column_config.TextColumn("Guilde"),
             "Alliance": st.column_config.TextColumn("Alliance"),
-            "Statut": st.column_config.TextColumn("Statut")
+            "Analyse": st.column_config.TextColumn("État Liste"),
+            "Détail": st.column_config.TextColumn("Raison")
         }
-        
-        cols_to_show = [c for c in df_show.columns if c not in ['Ref Fame', 'Progression_Value']]
-        ordre_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Alliance', 'Statut']
-        cols_finales = [c for c in ordre_cols if c in df_show.columns]
-        df_show = df_show[cols_finales]
-
-        st.dataframe(df_show, column_config=cols_conf, use_container_width=True)
-    else: st.info("Aucune donnée.")
+        final_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Analyse', 'Détail']
+        st.dataframe(df_show[[c for c in final_cols if c in df_show.columns]], column_config=cols_conf, use_container_width=True)
