@@ -6,6 +6,7 @@ import time
 import json
 import re
 from datetime import datetime
+from collections import Counter
 
 # --- SÉCURITÉ ---
 if "app_password" in st.secrets:
@@ -36,16 +37,13 @@ def extraire_noms_et_tags(liste_brute):
     resultat = set()
     for item in liste_brute:
         txt = item.strip().lower()
-        resultat.add(txt) # Ajoute la ligne complète
-        
-        # Regex pour trouver "Nom [TAG]"
+        resultat.add(txt) 
         match = re.search(r'^(.*?)\[(.*?)\]$', txt)
         if match:
             nom_seul = match.group(1).strip()
             tag_seul = match.group(2).strip()
             if nom_seul: resultat.add(nom_seul)
             if tag_seul: resultat.add(tag_seul)
-            
     return resultat
 
 # --- API ALBION ---
@@ -157,7 +155,7 @@ with tab2:
 # --- TAB 3 : ARION SCANNER ---
 with tab3:
     st.subheader("🚀 Arion Scanner")
-    st.info("💡 Colle les permissions. Le scanner identifie les doublons si le joueur est couvert par sa **Guilde** OU son **Alliance**.")
+    st.info("💡 Colle les permissions. Le scanner détecte les doublons ET suggère des regroupements par Alliance.")
     
     col_input, col_action = st.columns([2, 1])
     with col_input:
@@ -177,20 +175,15 @@ with tab3:
             except: pass
 
     if scan_btn and raw_text:
-        # 1. Analyse de la liste fournie (Input)
+        # 1. Analyse Input
         guildes_brutes = re.findall(r'"Guild:([^"]+)"', raw_text)
         alliances_brutes = re.findall(r'"Alliance:([^"]+)"', raw_text)
         
-        # On extrait tout : Noms complets, Noms seuls, Tags
         memoire_guildes = extraire_noms_et_tags(guildes_brutes)
         memoire_alliances = extraire_noms_et_tags(alliances_brutes)
         
-        # Liste des joueurs à scanner
         raw_players = list(set(re.findall(r'"Player:([^"]+)"', raw_text)))
 
-        if memoire_guildes or memoire_alliances:
-            st.toast(f"ℹ️ Liste chargée : {len(guildes_brutes)} Guildes & {len(alliances_brutes)} Alliances.")
-        
         if not raw_players:
             st.warning("Aucun joueur trouvé.")
         else:
@@ -198,33 +191,40 @@ with tab3:
             barre = st.progress(0)
             status = st.empty()
             
+            # Pour l'intelligence de groupe
+            groupe_stats = {} # Clé = Nom Alliance, Valeur = Set de guildes
+            
             for i, p_name in enumerate(raw_players):
                 status.text(f"Analyse : {p_name}...")
-                
-                # 2. Données réelles du joueur (API)
                 infos = get_player_stats(p_name)
                 
-                # 3. CROISEMENT (La logique que tu veux)
                 status_doublon = "✅ Unique"
                 detail_doublon = ""
 
                 if infos['Trouve']:
-                    # Données en minuscule pour comparaison
+                    # Données en minuscule
                     g_api = infos['Guilde'].lower()
                     a_name_api = infos['Alliance'].lower()
                     a_tag_api = infos['AllianceTag'].lower()
                     
-                    # CAS A : Sa GUILDE est dans la liste ?
+                    # 1. Check Doublons (Liste Input)
                     if g_api in memoire_guildes:
                         status_doublon = "⚠️ Doublon (Guilde)"
-                        detail_doublon = f"Guilde '{infos['Guilde']}' présente"
-                    
-                    # CAS B : Son ALLIANCE (Nom ou Tag) est dans la liste ?
-                    # C'est ici que V3L0 sera attrapé car 'WALKR' sera trouvé dans memoire_alliances
+                        detail_doublon = f"Déjà inclus via Guilde"
                     elif (a_name_api != "-" and a_name_api in memoire_alliances) or \
                          (a_tag_api != "" and a_tag_api in memoire_alliances):
                         status_doublon = "⚠️ Doublon (Alliance)"
-                        detail_doublon = f"Alliance '{infos['Alliance']}' présente"
+                        detail_doublon = f"Déjà inclus via Alliance"
+
+                    # 2. Collecte de données pour Intelligence de Groupe
+                    # On ignore ceux qui n'ont pas d'alliance
+                    if infos['Alliance'] != "-":
+                        nom_alli_propre = infos['Alliance']
+                        if infos['AllianceTag']: nom_alli_propre += f" [{infos['AllianceTag']}]"
+                        
+                        if nom_alli_propre not in groupe_stats:
+                            groupe_stats[nom_alli_propre] = set()
+                        groupe_stats[nom_alli_propre].add(infos['Guilde'])
 
                 infos['Analyse'] = status_doublon
                 infos['Détail'] = detail_doublon
@@ -240,7 +240,41 @@ with tab3:
                 barre.progress((i+1)/len(raw_players))
 
             barre.empty()
-            status.success(f"Terminé !")
+            status.success(f"Scan terminé !")
+
+            # --- INTELLIGENCE DE GROUPE ---
+            # On cherche les alliances qui ont plusieurs guildes différentes dans le scan
+            regroupements_possibles = []
+            for alliance, guildes in groupe_stats.items():
+                # On ne suggère que si l'alliance n'est PAS DÉJÀ dans la liste input (sinon c'est déjà un doublon)
+                # Et qu'il y a plus d'une entité concernée
+                alliance_clean = alliance.split(" [")[0].lower()
+                tag_clean = ""
+                if "[" in alliance: tag_clean = alliance.split("[")[1].replace("]", "").lower()
+                
+                is_already_covered = (alliance_clean in memoire_alliances) or (tag_clean in memoire_alliances and tag_clean != "")
+                
+                if not is_already_covered and len(guildes) >= 1:
+                     # On compte combien de joueurs sont concernés
+                     nb_joueurs = sum(1 for r in resultats if r.get('Alliance_Display') == alliance)
+                     regroupements_possibles.append({
+                         "Alliance": alliance,
+                         "Nb_Guildes": len(guildes),
+                         "Guildes": ", ".join(list(guildes)),
+                         "Nb_Joueurs": nb_joueurs
+                     })
+
+            if regroupements_possibles:
+                st.info("📢 **Regroupements Suggérés :** Ces alliances contiennent plusieurs joueurs/guildes scannés. Les ajouter à votre liste simplifierait les perms.")
+                cols_sugg = st.columns(len(regroupements_possibles)) if len(regroupements_possibles) < 4 else st.columns(3)
+                
+                for idx, item in enumerate(regroupements_possibles):
+                    with cols_sugg[idx % 3]:
+                        st.markdown(f"""
+                        **🛡️ {item['Alliance']}**
+                        * {item['Nb_Joueurs']} joueurs concernés
+                        * Guildes : {item['Guildes']}
+                        """)
 
             df_res = pd.DataFrame(resultats)
             
