@@ -57,22 +57,24 @@ def get_player_stats(pseudo):
             if target:
                 player_id = target['Id']
                 
-                # Noms officiels (API)
+                # Noms officiels (API Search)
                 guild_name = target.get('GuildName') or "Aucune"
                 alliance_name = target.get('AllianceName') or "-"
 
-                # Appel détail pour la Fame
+                # Appel détail pour la Fame et confirmation Alliance
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
                 craft_fame = 0
                 
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
+                    # Souvent l'alliance est vide dans la recherche mais présente dans les détails
                     if info.get('AllianceName'): alliance_name = info.get('AllianceName')
                     
                     ls = info.get('LifetimeStatistics', {})
                     crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
-                    candidates = [info.get('CraftFame'), crafting.get('Total'), crafting.get('craftFame')]
+                    candidates = [info.get('CraftFame'), crafting.get('Total'), crafting.get('craftFame')
+                    ]
                     for val in candidates:
                         if isinstance(val, (int, float)):
                             craft_fame = val
@@ -106,7 +108,9 @@ except Exception as e: st.error(f"❌ Erreur connexion : {e}"); st.stop()
 # --- INTERFACE ---
 st.set_page_config(page_title="Albion Manager", page_icon="💰", layout="wide")
 st.title("🏹 Albion Economy Manager (EU)")
-tab1, tab2, tab3 = st.tabs(["✍️ Saisie", "📊 Analyse", "🔍 Détection Doublons"])
+
+# MISE À JOUR DU NOM DE L'ONGLET ICI
+tab1, tab2, tab3 = st.tabs(["✍️ Saisie", "📊 Analyse", "🚀 Arion Scanner"])
 
 # --- TAB 1 : SAISIE ---
 with tab1:
@@ -136,10 +140,10 @@ with tab2:
             st.dataframe(df.tail(10), use_container_width=True)
     except: st.warning("Pas de données.")
 
-# --- TAB 3 : SCAN JOUEURS & DOUBLONS ---
+# --- TAB 3 : ARION SCANNER ---
 with tab3:
-    st.subheader("🕵️ Scan des Joueurs & Détection des Doublons")
-    st.info("💡 Ce scan vérifie si les joueurs listés individuellement ('Player:...') sont déjà couverts par une Guilde ou une Alliance présente dans la liste.")
+    st.subheader("🚀 Arion Scanner")
+    st.info("💡 Colle la liste des permissions. Le scanner détecte si un joueur est déjà couvert par sa **Guilde** ou son **Alliance** présente dans la liste.")
     
     col_input, col_action = st.columns([2, 1])
     with col_input:
@@ -159,15 +163,14 @@ with tab3:
             except: pass
 
     if scan_btn and raw_text:
-        # 1. Mise en mémoire des Groupes (Guildes/Alliances) présents dans le texte
-        # On stocke en minuscule pour comparer sans souci
+        # 1. Mise en mémoire (Guilde ET Alliance)
         memoire_guildes_input = set(g.strip().lower() for g in re.findall(r'"Guild:([^"]+)"', raw_text))
         memoire_alliances_input = set(a.strip().lower() for a in re.findall(r'"Alliance:([^"]+)"', raw_text))
         
         raw_players = list(set(re.findall(r'"Player:([^"]+)"', raw_text)))
 
         if memoire_guildes_input or memoire_alliances_input:
-            st.toast(f"ℹ️ Comparaison avec : {len(memoire_guildes_input)} Guildes et {len(memoire_alliances_input)} Alliances trouvées dans le texte.")
+            st.toast(f"ℹ️ Comparaison active : {len(memoire_guildes_input)} Guildes & {len(memoire_alliances_input)} Alliances en mémoire.")
         
         if not raw_players:
             st.warning("Aucun joueur trouvé.")
@@ -182,23 +185,25 @@ with tab3:
                 # Appel API
                 infos = get_player_stats(p_name)
                 
-                # LOGIQUE DE DÉTECTION DE DOUBLON
-                status_doublon = "✅ Unique" # Par défaut
+                # --- LOGIQUE DE DÉTECTION DE DOUBLON ---
+                status_doublon = "✅ Unique"
                 detail_doublon = ""
 
                 if infos['Trouve']:
+                    # On compare en minuscule pour être sûr
                     g_api = infos['Guilde'].lower()
                     a_api = infos['Alliance'].lower()
                     
-                    # Est-ce que la guilde du joueur est dans le texte collé ?
+                    # 1. Vérif Guilde
                     if g_api in memoire_guildes_input:
                         status_doublon = "⚠️ Doublon (Guilde)"
-                        detail_doublon = f"Déjà inclus via guilde '{infos['Guilde']}'"
+                        detail_doublon = f"Couvert par la guilde '{infos['Guilde']}'"
                     
-                    # Est-ce que l'alliance du joueur est dans le texte collé ?
-                    elif a_api in memoire_alliances_input:
+                    # 2. Vérif Alliance
+                    # On vérifie que le joueur a bien une alliance (pas "-") et qu'elle est dans la liste
+                    elif a_api != "-" and a_api in memoire_alliances_input:
                         status_doublon = "⚠️ Doublon (Alliance)"
-                        detail_doublon = f"Déjà inclus via alliance '{infos['Alliance']}'"
+                        detail_doublon = f"Couvert par l'alliance '{infos['Alliance']}'"
 
                 infos['Analyse'] = status_doublon
                 infos['Détail'] = detail_doublon
@@ -208,7 +213,7 @@ with tab3:
                 barre.progress((i+1)/len(raw_players))
 
             barre.empty()
-            status.success(f"Terminé !")
+            status.success(f"Scan terminé !")
 
             df_res = pd.DataFrame(resultats)
             
@@ -233,7 +238,7 @@ with tab3:
             df_res['Avis'] = df_res['Craft Fame'].apply(lambda x: "🟢 Productif" if x > SEUIL_FAME_MIN else "🔴 Faible")
 
             st.session_state['data_display'] = df_res
-            st.session_state['display_type'] = "Analyse Doublons"
+            st.session_state['display_type'] = "Arion Scanner"
 
     # SAUVEGARDE
     if save_ref_btn and st.session_state['data_display'] is not None:
@@ -266,5 +271,5 @@ with tab3:
             "Analyse": st.column_config.TextColumn("État Liste"),
             "Détail": st.column_config.TextColumn("Raison")
         }
-        final_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Analyse', 'Détail']
+        final_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Alliance', 'Analyse', 'Détail']
         st.dataframe(df_show[[c for c in final_cols if c in df_show.columns]], column_config=cols_conf, use_container_width=True)
