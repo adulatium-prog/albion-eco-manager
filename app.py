@@ -37,9 +37,11 @@ def format_nombre_entier(valeur):
 # --- API ALBION ---
 def get_albion_stats(pseudo):
     try:
+        # 1. RECHERCHE (On ne prend que l'ID et la Guilde ici)
         url_search = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         resp = requests.get(url_search, headers=headers)
+        
         if resp.status_code == 200:
             data = resp.json()
             players = data.get('players', [])
@@ -54,21 +56,24 @@ def get_albion_stats(pseudo):
                 player_id = target['Id']
                 guild = target.get('GuildName') or "Aucune"
                 
-                # On ne récupère pas l'alliance ici (souvent le TAG)
-                # On attend la fiche détaillée pour avoir le NOM
+                # IMPORTANT : On force l'alliance à "-" pour l'instant
+                # On ne fait pas confiance au résultat de la recherche qui contient souvent le TAG
+                alliance = "-"
                 
+                # 2. DÉTAILS (C'est ici qu'on veut le vrai NOM)
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
                 
                 craft_fame = 0
-                alliance = "-"
                 
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
                     
-                    # C'est ici qu'on récupère le VRAI NOM de l'alliance
-                    alliance = info.get('AllianceName') or "-"
-                    if alliance == "": alliance = "-"
+                    # On récupère strictement le AllianceName
+                    # Si l'API renvoie le Tag ici, c'est que le nom EST le Tag (on ne peut rien faire)
+                    nom_alliance = info.get('AllianceName')
+                    if nom_alliance:
+                        alliance = nom_alliance
                     
                     ls = info.get('LifetimeStatistics', {})
                     crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
@@ -290,11 +295,11 @@ with tab3:
         
         if 'Alliance' in df_analysis.columns and 'Guilde' in df_analysis.columns:
             
-            # 1. Analyse Guildes
+            # Analyse Guildes
             guild_counts = df_analysis[df_analysis['Guilde'] != "Aucune"]['Guilde'].value_counts()
             alertes_guildes = guild_counts[guild_counts > 1]
             
-            # 2. Analyse Alliances
+            # Analyse Alliances
             alliance_groups = df_analysis[df_analysis['Alliance'] != "-"].groupby('Alliance')['Guilde'].nunique()
             alertes_alliances = alliance_groups[alliance_groups > 1]
             
@@ -314,7 +319,7 @@ with tab3:
                     nb_joueurs_alli = len(df_analysis[df_analysis['Alliance'] == alliance_nom])
                     with cols_alerts[col_idx % 2]:
                         st.button(f"🤝 Alliance '{alliance_nom}' : {count_guildes} guildes ({nb_joueurs_alli} joueurs)",
-                                  help=f"Conseil : Plusieurs guildes ({count_guildes}) de cette alliance sont présentes.",
+                                  help=f"Conseil : Plusieurs guildes de cette alliance sont présentes.",
                                   use_container_width=True)
                     col_idx += 1
                 st.write("---")
