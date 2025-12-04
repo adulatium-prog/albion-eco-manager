@@ -53,15 +53,22 @@ def get_albion_stats(pseudo):
             if target:
                 player_id = target['Id']
                 guild = target.get('GuildName') or "Aucune"
-                alliance = target.get('AllianceName') or "-" # NOUVEAU : Récupération Alliance
+                
+                # On ne récupère pas l'alliance ici (souvent le TAG)
+                # On attend la fiche détaillée pour avoir le NOM
                 
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
+                
                 craft_fame = 0
+                alliance = "-"
+                
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
-                    # On checke l'alliance dans le détail aussi si absente avant
-                    if alliance == "-": alliance = info.get('AllianceName') or "-"
+                    
+                    # C'est ici qu'on récupère le VRAI NOM de l'alliance
+                    alliance = info.get('AllianceName') or "-"
+                    if alliance == "": alliance = "-"
                     
                     ls = info.get('LifetimeStatistics', {})
                     crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
@@ -73,6 +80,7 @@ def get_albion_stats(pseudo):
                         if isinstance(val, (int, float)):
                             craft_fame = val
                             break
+                            
                 return {
                     "Pseudo": target['Name'], 
                     "Guilde": guild, 
@@ -276,50 +284,40 @@ with tab3:
 
     st.divider()
     
-    # --- 📢 INTELLIGENCE DES GROUPES (AFFICHAGE) ---
+    # --- 📢 INTELLIGENCE DES GROUPES ---
     if st.session_state['data_display'] is not None:
         df_analysis = st.session_state['data_display'].copy()
         
-        # On vérifie qu'on a bien les données du scan et pas juste la référence (qui n'a pas les alliances)
         if 'Alliance' in df_analysis.columns and 'Guilde' in df_analysis.columns:
             
-            # 1. Analyse des Guildes (doublons)
+            # 1. Analyse Guildes
             guild_counts = df_analysis[df_analysis['Guilde'] != "Aucune"]['Guilde'].value_counts()
             alertes_guildes = guild_counts[guild_counts > 1]
             
-            # 2. Analyse des Alliances (Guildes multiples dans la même alliance)
-            # On groupe par Alliance et on compte les Guildes UNIQUES
+            # 2. Analyse Alliances
             alliance_groups = df_analysis[df_analysis['Alliance'] != "-"].groupby('Alliance')['Guilde'].nunique()
             alertes_alliances = alliance_groups[alliance_groups > 1]
             
             if not alertes_guildes.empty or not alertes_alliances.empty:
-                st.info("📢 **Regroupements détectés :** Des joueurs partagent les mêmes structures.")
-                
-                # Création d'une grille pour les boutons/alertes
+                st.info("📢 **Regroupements détectés :**")
                 cols_alerts = st.columns(2)
                 col_idx = 0
                 
-                # A. Boutons Guildes
                 for guilde_nom, count in alertes_guildes.items():
                     with cols_alerts[col_idx % 2]:
                         st.button(f"🏢 Guilde '{guilde_nom}' : {count} joueurs", 
-                                  help=f"Conseil : Vous avez {count} joueurs de cette guilde. Ajoutez la guilde aux droits !",
+                                  help=f"Conseil : Ajoutez directement la guilde.",
                                   use_container_width=True)
                     col_idx += 1
                 
-                # B. Boutons Alliances
                 for alliance_nom, count_guildes in alertes_alliances.items():
-                    # On compte aussi le nombre total de joueurs pour l'info
                     nb_joueurs_alli = len(df_analysis[df_analysis['Alliance'] == alliance_nom])
                     with cols_alerts[col_idx % 2]:
                         st.button(f"🤝 Alliance '{alliance_nom}' : {count_guildes} guildes ({nb_joueurs_alli} joueurs)",
-                                  help=f"Conseil : Plusieurs guildes ({count_guildes}) de l'alliance {alliance_nom} sont présentes.",
+                                  help=f"Conseil : Plusieurs guildes ({count_guildes}) de cette alliance sont présentes.",
                                   use_container_width=True)
                     col_idx += 1
-                
                 st.write("---")
-
-        # --- FIN INTELLIGENCE ---
 
         st.caption(f"Affichage : **{st.session_state.get('display_type', '')}**")
         df_show = st.session_state['data_display'].copy()
