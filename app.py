@@ -35,7 +35,7 @@ def format_nombre_entier(valeur):
 # --- API ALBION ---
 def get_player_stats(pseudo):
     """ 
-    Récupère les stats et surtout la Guilde/Alliance actuelle pour vérifier les doublons.
+    Récupère les stats + Nom Alliance + Tag Alliance pour comparaison robuste.
     """
     try:
         url_search = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
@@ -57,24 +57,26 @@ def get_player_stats(pseudo):
             if target:
                 player_id = target['Id']
                 
-                # Noms officiels (API Search)
+                # Infos de base
                 guild_name = target.get('GuildName') or "Aucune"
                 alliance_name = target.get('AllianceName') or "-"
+                alliance_tag = target.get('AllianceTag') or "" # On récupère le Tag aussi
 
-                # Appel détail pour la Fame et confirmation Alliance
+                # Appel détail pour la Fame
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
                 craft_fame = 0
                 
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
-                    # Souvent l'alliance est vide dans la recherche mais présente dans les détails
+                    
+                    # Mise à jour avec données précises si dispo
                     if info.get('AllianceName'): alliance_name = info.get('AllianceName')
+                    if info.get('AllianceTag'): alliance_tag = info.get('AllianceTag')
                     
                     ls = info.get('LifetimeStatistics', {})
                     crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
-                    candidates = [info.get('CraftFame'), crafting.get('Total'), crafting.get('craftFame')
-                    ]
+                    candidates = [info.get('CraftFame'), crafting.get('Total'), crafting.get('craftFame')]
                     for val in candidates:
                         if isinstance(val, (int, float)):
                             craft_fame = val
@@ -84,11 +86,12 @@ def get_player_stats(pseudo):
                     "Pseudo": target['Name'], 
                     "Guilde": guild_name,
                     "Alliance": alliance_name,
+                    "AllianceTag": alliance_tag, # Stocké séparément pour la vérif
                     "Craft Fame": craft_fame, 
                     "Trouve": True
                 }
-        return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Trouve": False}
-    except: return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "Craft Fame": 0, "Trouve": False}
+        return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "AllianceTag": "", "Craft Fame": 0, "Trouve": False}
+    except: return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "AllianceTag": "", "Craft Fame": 0, "Trouve": False}
 
 # --- CONNEXION ---
 try:
@@ -109,7 +112,6 @@ except Exception as e: st.error(f"❌ Erreur connexion : {e}"); st.stop()
 st.set_page_config(page_title="Albion Manager", page_icon="💰", layout="wide")
 st.title("🏹 Albion Economy Manager (EU)")
 
-# MISE À JOUR DU NOM DE L'ONGLET ICI
 tab1, tab2, tab3 = st.tabs(["✍️ Saisie", "📊 Analyse", "🚀 Arion Scanner"])
 
 # --- TAB 1 : SAISIE ---
@@ -143,7 +145,7 @@ with tab2:
 # --- TAB 3 : ARION SCANNER ---
 with tab3:
     st.subheader("🚀 Arion Scanner")
-    st.info("💡 Colle la liste des permissions. Le scanner détecte si un joueur est déjà couvert par sa **Guilde** ou son **Alliance** présente dans la liste.")
+    st.info("💡 Colle la liste des permissions. Le scanner détecte si un joueur est déjà couvert par sa **Guilde** ou son **Alliance** (Nom ou Tag).")
     
     col_input, col_action = st.columns([2, 1])
     with col_input:
@@ -190,24 +192,31 @@ with tab3:
                 detail_doublon = ""
 
                 if infos['Trouve']:
-                    # On compare en minuscule pour être sûr
+                    # Données API
                     g_api = infos['Guilde'].lower()
-                    a_api = infos['Alliance'].lower()
+                    a_name_api = infos['Alliance'].lower()
+                    a_tag_api = infos['AllianceTag'].lower()
                     
                     # 1. Vérif Guilde
                     if g_api in memoire_guildes_input:
                         status_doublon = "⚠️ Doublon (Guilde)"
-                        detail_doublon = f"Couvert par la guilde '{infos['Guilde']}'"
+                        detail_doublon = f"Guilde '{infos['Guilde']}' présente"
                     
-                    # 2. Vérif Alliance
-                    # On vérifie que le joueur a bien une alliance (pas "-") et qu'elle est dans la liste
-                    elif a_api != "-" and a_api in memoire_alliances_input:
+                    # 2. Vérif Alliance (Nom OU Tag)
+                    elif (a_name_api != "-" and a_name_api in memoire_alliances_input) or \
+                         (a_tag_api != "" and a_tag_api in memoire_alliances_input):
                         status_doublon = "⚠️ Doublon (Alliance)"
-                        detail_doublon = f"Couvert par l'alliance '{infos['Alliance']}'"
+                        detail_doublon = f"Alliance '{infos['Alliance']}' présente"
 
                 infos['Analyse'] = status_doublon
                 infos['Détail'] = detail_doublon
                 
+                # Pour l'affichage propre : "Nom [TAG]"
+                if infos['AllianceTag']:
+                    infos['Alliance_Display'] = f"{infos['Alliance']} [{infos['AllianceTag']}]"
+                else:
+                    infos['Alliance_Display'] = infos['Alliance']
+
                 resultats.append(infos)
                 time.sleep(0.12)
                 barre.progress((i+1)/len(raw_players))
@@ -267,9 +276,12 @@ with tab3:
             "Craft Fame": st.column_config.NumberColumn("Fame Totale", format="%d"),
             "Progression": st.column_config.TextColumn("Progression"),
             "Guilde": st.column_config.TextColumn("Guilde"),
-            "Alliance": st.column_config.TextColumn("Alliance"),
+            "Alliance_Display": st.column_config.TextColumn("Alliance"), # On utilise la colonne combinée
             "Analyse": st.column_config.TextColumn("État Liste"),
             "Détail": st.column_config.TextColumn("Raison")
         }
-        final_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Alliance', 'Analyse', 'Détail']
+        # Note: on prend 'Alliance_Display' mais on l'affiche sous le nom "Alliance" dans le tableau
+        final_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Alliance_Display', 'Analyse', 'Détail']
+        
+        # Petit hack pour que le tri fonctionne si la colonne s'appelle différemment dans le DF
         st.dataframe(df_show[[c for c in final_cols if c in df_show.columns]], column_config=cols_conf, use_container_width=True)
