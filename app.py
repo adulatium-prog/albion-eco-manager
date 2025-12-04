@@ -53,11 +53,16 @@ def get_albion_stats(pseudo):
             if target:
                 player_id = target['Id']
                 guild = target.get('GuildName') or "Aucune"
+                alliance = target.get('AllianceName') or "-" # NOUVEAU : Récupération Alliance
+                
                 url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
                 resp_stats = requests.get(url_stats, headers=headers)
                 craft_fame = 0
                 if resp_stats.status_code == 200:
                     info = resp_stats.json()
+                    # On checke l'alliance dans le détail aussi si absente avant
+                    if alliance == "-": alliance = info.get('AllianceName') or "-"
+                    
                     ls = info.get('LifetimeStatistics', {})
                     crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
                     candidates = [
@@ -68,13 +73,19 @@ def get_albion_stats(pseudo):
                         if isinstance(val, (int, float)):
                             craft_fame = val
                             break
-                return {"Pseudo": target['Name'], "Guilde": guild, "Craft Fame": craft_fame, "Statut": "✅ OK"}
+                return {
+                    "Pseudo": target['Name'], 
+                    "Guilde": guild, 
+                    "Alliance": alliance, 
+                    "Craft Fame": craft_fame, 
+                    "Statut": "✅ OK"
+                }
             else:
-                return {"Pseudo": pseudo, "Guilde": "-", "Craft Fame": 0, "Statut": "❌ Introuvable"}
+                return {"Pseudo": pseudo, "Guilde": "-", "Alliance": "-", "Craft Fame": 0, "Statut": "❌ Introuvable"}
         else:
-            return {"Pseudo": pseudo, "Guilde": "-", "Craft Fame": 0, "Statut": "⚠️ Erreur API"}
+            return {"Pseudo": pseudo, "Guilde": "-", "Alliance": "-", "Craft Fame": 0, "Statut": "⚠️ Erreur API"}
     except:
-        return {"Pseudo": pseudo, "Guilde": "-", "Craft Fame": 0, "Statut": "Erreur Script"}
+        return {"Pseudo": pseudo, "Guilde": "-", "Alliance": "-", "Craft Fame": 0, "Statut": "Erreur Script"}
 
 # --- CONNEXION ---
 try:
@@ -204,7 +215,7 @@ with tab3:
             
             df_res = pd.DataFrame(res)
             
-            # --- CALCUL PROGRESSION + NOUVEAUX ---
+            # --- CALCUL PROGRESSION ---
             if ws_ref:
                 try:
                     ref_d = ws_ref.get_all_records()
@@ -212,54 +223,36 @@ with tab3:
                         df_ref = pd.DataFrame(ref_d)
                         if 'Pseudo' in df_ref.columns and 'Craft Fame' in df_ref.columns:
                             df_ref = df_ref[['Pseudo', 'Craft Fame']].rename(columns={'Craft Fame': 'Ref Fame'})
-                            # Conversion numérique stricte
                             df_ref['Ref Fame'] = pd.to_numeric(df_ref['Ref Fame'], errors='coerce').fillna(0)
                             
                             df_res = pd.merge(df_res, df_ref, on='Pseudo', how='left')
-                            
-                            # Calculs
-                            # 1. Progression brute (chiffre)
                             df_res['Progression_Value'] = df_res['Craft Fame'] - df_res['Ref Fame'].fillna(0)
                             
-                            # 2. Gestion de l'affichage (Nouveau vs Chiffre)
                             def get_display_prog(row):
-                                # Si Ref Fame est vide ou 0, c'est un nouveau joueur
-                                if pd.isna(row['Ref Fame']) or row['Ref Fame'] == 0:
-                                    return "✨ Nouveau"
-                                else:
-                                    # Sinon c'est le chiffre formaté
-                                    return row['Progression_Value']
+                                if pd.isna(row['Ref Fame']) or row['Ref Fame'] == 0: return "✨ Nouveau"
+                                return row['Progression_Value']
                             
-                            # 3. Gestion du Pourcentage
                             def get_percent(row):
-                                if pd.isna(row['Ref Fame']) or row['Ref Fame'] == 0:
-                                    return "-" # Pas de % pour les nouveaux
-                                else:
-                                    if row['Ref Fame'] > 0:
-                                        pct = (row['Progression_Value'] / row['Ref Fame']) * 100
-                                        return f"+{pct:.1f}%" if pct > 0 else f"{pct:.1f}%"
-                                    return "-"
+                                if pd.isna(row['Ref Fame']) or row['Ref Fame'] == 0: return "-"
+                                if row['Ref Fame'] > 0:
+                                    pct = (row['Progression_Value'] / row['Ref Fame']) * 100
+                                    return f"+{pct:.1f}%" if pct > 0 else f"{pct:.1f}%"
+                                return "-"
 
                             df_res['Progression'] = df_res.apply(get_display_prog, axis=1)
                             df_res['% Évol.'] = df_res.apply(get_percent, axis=1)
-                            
-                except Exception as e:
-                     # Si erreur, on remplit par défaut
+                except: 
                      df_res['Progression'] = "✨ Nouveau"
                      df_res['% Évol.'] = "-"
                      df_res['Progression_Value'] = df_res['Craft Fame']
 
             # --- AVIS ---
-            # On se base sur la valeur brute (Progression_Value) ou la Fame totale si nouveau
             col_valeur = 'Progression_Value' if 'Progression_Value' in df_res.columns else 'Craft Fame'
-            
             def evaluer_prod(valeur):
-                # Si c'est un texte (ex: erreur), on ignore
                 if isinstance(valeur, (int, float)):
                      if valeur < SEUIL_FAME_MIN: return "🔴 Faible"
                      else: return "🟢 Productif"
                 return "-"
-            
             if col_valeur in df_res.columns:
                 df_res['Avis'] = df_res[col_valeur].apply(evaluer_prod)
 
@@ -282,18 +275,60 @@ with tab3:
         else: st.warning("Rien à sauvegarder.")
 
     st.divider()
+    
+    # --- 📢 INTELLIGENCE DES GROUPES (AFFICHAGE) ---
     if st.session_state['data_display'] is not None:
+        df_analysis = st.session_state['data_display'].copy()
+        
+        # On vérifie qu'on a bien les données du scan et pas juste la référence (qui n'a pas les alliances)
+        if 'Alliance' in df_analysis.columns and 'Guilde' in df_analysis.columns:
+            
+            # 1. Analyse des Guildes (doublons)
+            guild_counts = df_analysis[df_analysis['Guilde'] != "Aucune"]['Guilde'].value_counts()
+            alertes_guildes = guild_counts[guild_counts > 1]
+            
+            # 2. Analyse des Alliances (Guildes multiples dans la même alliance)
+            # On groupe par Alliance et on compte les Guildes UNIQUES
+            alliance_groups = df_analysis[df_analysis['Alliance'] != "-"].groupby('Alliance')['Guilde'].nunique()
+            alertes_alliances = alliance_groups[alliance_groups > 1]
+            
+            if not alertes_guildes.empty or not alertes_alliances.empty:
+                st.info("📢 **Regroupements détectés :** Des joueurs partagent les mêmes structures.")
+                
+                # Création d'une grille pour les boutons/alertes
+                cols_alerts = st.columns(2)
+                col_idx = 0
+                
+                # A. Boutons Guildes
+                for guilde_nom, count in alertes_guildes.items():
+                    with cols_alerts[col_idx % 2]:
+                        st.button(f"🏢 Guilde '{guilde_nom}' : {count} joueurs", 
+                                  help=f"Conseil : Vous avez {count} joueurs de cette guilde. Ajoutez la guilde aux droits !",
+                                  use_container_width=True)
+                    col_idx += 1
+                
+                # B. Boutons Alliances
+                for alliance_nom, count_guildes in alertes_alliances.items():
+                    # On compte aussi le nombre total de joueurs pour l'info
+                    nb_joueurs_alli = len(df_analysis[df_analysis['Alliance'] == alliance_nom])
+                    with cols_alerts[col_idx % 2]:
+                        st.button(f"🤝 Alliance '{alliance_nom}' : {count_guildes} guildes ({nb_joueurs_alli} joueurs)",
+                                  help=f"Conseil : Plusieurs guildes ({count_guildes}) de l'alliance {alliance_nom} sont présentes.",
+                                  use_container_width=True)
+                    col_idx += 1
+                
+                st.write("---")
+
+        # --- FIN INTELLIGENCE ---
+
         st.caption(f"Affichage : **{st.session_state.get('display_type', '')}**")
         df_show = st.session_state['data_display'].copy()
         
         if 'Avis' not in df_show.columns: df_show['Avis'] = "-"
         if '% Évol.' not in df_show.columns: df_show['% Évol.'] = "-"
 
-        # FORMATAGE VISUEL DE LA PROGRESSION
-        # Si c'est un nombre, on applique le format espace. Si c'est "Nouveau", on laisse tel quel.
         def format_prog_visuel(val):
-            if isinstance(val, (int, float)):
-                return format_nombre_entier(val)
+            if isinstance(val, (int, float)): return format_nombre_entier(val)
             return str(val)
 
         if 'Progression' in df_show.columns:
@@ -302,14 +337,15 @@ with tab3:
         cols_conf = {
             "Avis": st.column_config.TextColumn("Productivité"), 
             "Craft Fame": st.column_config.NumberColumn("Fame Totale", format="%d"),
-            "Progression": st.column_config.TextColumn("📈 Progression"), # TextColumn pour accepter "Nouveau"
+            "Progression": st.column_config.TextColumn("📈 Progression"),
             "% Évol.": st.column_config.TextColumn("% Évol."),
             "Guilde": st.column_config.TextColumn("Guilde"),
+            "Alliance": st.column_config.TextColumn("Alliance"),
             "Statut": st.column_config.TextColumn("Statut")
         }
         
         cols_to_show = [c for c in df_show.columns if c not in ['Ref Fame', 'Progression_Value']]
-        ordre_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Statut']
+        ordre_cols = ['Pseudo', 'Avis', 'Craft Fame', 'Progression', '% Évol.', 'Guilde', 'Alliance', 'Statut']
         cols_finales = [c for c in ordre_cols if c in df_show.columns]
         df_show = df_show[cols_finales]
 
