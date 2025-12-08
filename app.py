@@ -6,114 +6,111 @@ import time
 import json
 import re
 from datetime import datetime
-from collections import Counter
 
-# --- CONFIGURATION DE LA PAGE ET CSS "ALBION" ---
+# --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Albion Economy Manager", page_icon="⚔️", layout="wide")
 
-# Injection du CSS Thème Albion Online
+# Injection du CSS (Style "Silver" + Fond Dégradé + Boutons Arrondis)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@400;700&display=swap');
 
-    /* --- GLOBAL --- */
+    /* --- 1. FOND D'ÉCRAN (VOTRE DÉGRADÉ) --- */
     .stApp {
-        background-color: #161a1e; /* Gris Ardoise Sombre */
+        background-image: linear-gradient(to right bottom, #0f0c29, #302b63, #24243e);
         color: #ecf0f1;
         font-family: 'Roboto', sans-serif;
     }
 
-    /* --- TYPOGRAPHIE --- */
-    h1, h2, h3, .albion-font {
-        font-family: 'Cinzel', serif !important;
-        color: #f1c40f !important; /* Doré Albion */
-        text-shadow: 2px 2px 4px #000000;
-        font-weight: 700;
-    }
-    
-    /* --- BOUTONS (Style Craft/Action) --- */
+    /* --- 2. BOUTONS ARRONDIS --- */
     .stButton > button {
-        background: linear-gradient(180deg, #d35400, #a04000);
+        background: linear-gradient(180deg, #d35400, #a04000); /* Orange "Albion" conservé pour le contraste */
         color: white;
         border: 1px solid #e67e22;
-        border-radius: 4px;
+        border-radius: 20px; /* Arrondis demandés */
         font-family: 'Cinzel', serif;
         font-weight: bold;
         text-transform: uppercase;
+        padding: 10px 24px;
         transition: all 0.2s;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
     .stButton > button:hover {
         background: linear-gradient(180deg, #e67e22, #d35400);
-        border-color: #f1c40f;
-        transform: scale(1.02);
+        transform: scale(1.05);
+        box-shadow: 0 0 15px rgba(211, 84, 0, 0.6);
     }
 
-    /* --- INPUTS & FORMS --- */
+    /* --- 3. TYPOGRAPHIE (MODIFICATION COULEUR) --- */
+    h1, h2, h3, .albion-font {
+        font-family: 'Cinzel', serif !important;
+        color: #ecf0f1 !important; /* REMPLACEMENT DU JAUNE PAR BLANC ARGENTÉ */
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        font-weight: 700;
+    }
+
+    /* --- ELEMENTS D'INTERFACE (Inputs) --- */
     .stTextInput > div > div > input, .stNumberInput > div > div > input, .stSelectbox > div > div > div {
-        background-color: #121416;
-        color: #ecf0f1;
-        border: 1px solid #4a4a4a;
-        border-radius: 4px;
+        background-color: rgba(255, 255, 255, 0.05);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
     }
     
     /* --- ONGLETS (TABS) --- */
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px;
-        background-color: #23272b;
+        background-color: rgba(0, 0, 0, 0.2);
         padding: 10px;
-        border-radius: 8px;
-        border: 1px solid #4a4a4a;
+        border-radius: 20px;
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
-        white-space: pre-wrap;
-        background-color: #161a1e;
-        border-radius: 4px;
+        background-color: transparent;
         color: #bdc3c7;
         font-family: 'Cinzel', serif;
+        border: none;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #2c3e50;
-        color: #f1c40f;
-        border-bottom: 2px solid #f1c40f;
+        background-color: rgba(255, 255, 255, 0.1);
+        color: #ffffff; /* Actif en blanc pur */
+        border-radius: 10px;
+        font-weight: bold;
     }
 
-    /* --- CONTAINERS & EXPANDERS --- */
-    [data-testid="stExpander"], [data-testid="stForm"] {
-        background-color: #23272b;
-        border: 1px solid #4a4a4a;
-        border-radius: 6px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    /* --- CONTAINERS & BOITES --- */
+    [data-testid="stExpander"], [data-testid="stForm"], [data-testid="stMetricValue"] {
+        background-color: rgba(0, 0, 0, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.1); /* Bordure discrète */
+        border-radius: 15px;
     }
     
-    /* --- DATAFRAME --- */
-    [data-testid="stDataFrame"] {
-        border: 1px solid #4a4a4a;
-    }
-    
-    /* --- CUSTOM METRIC --- */
+    /* --- CUSTOM METRIC (TRÉSORERIE) --- */
     .albion-metric-box {
-        background: #23272b;
+        background: rgba(0, 0, 0, 0.3);
         padding: 20px;
-        border-radius: 8px;
-        border: 1px solid #f1c40f; /* Bordure dorée */
+        border-radius: 20px;
+        border: 1px solid rgba(236, 240, 241, 0.3); /* Bordure Argentée */
         text-align: center;
-        box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
     .metric-label {
         color: #bdc3c7;
         font-family: 'Cinzel', serif;
         font-size: 1.2em;
         margin-bottom: 5px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
     }
     .metric-value {
         font-family: 'Cinzel', serif;
-        font-size: 3em;
+        font-size: 3.5em;
         font-weight: bold;
-        text-shadow: 0 0 10px rgba(0,0,0,0.5);
+        text-shadow: 0 0 20px rgba(255,255,255,0.1);
     }
-    .val-pos { color: #2ecc71; text-shadow: 0 0 10px rgba(46, 204, 113, 0.3); }
-    .val-neg { color: #e74c3c; text-shadow: 0 0 10px rgba(231, 76, 60, 0.4); } /* Rouge Sang */
+    /* Couleurs conditionnelles pour le solde */
+    .val-pos { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.4); } /* Vert */
+    .val-neg { color: #ff6b6b; text-shadow: 0 0 15px rgba(255, 107, 107, 0.5); } /* Rouge pastel (plus lisible) */
 
 </style>
 """, unsafe_allow_html=True)
@@ -234,7 +231,7 @@ try:
 except Exception as e: st.error(f"❌ Erreur connexion : {e}"); st.stop()
 
 # --- INTERFACE PRINCIPALE ---
-st.markdown("<h1>⚔️ Albion Economy Manager <span style='font-size:0.5em; color:#7f8c8d'>EU SERVER</span></h1>", unsafe_allow_html=True)
+st.markdown("<h1>⚔️ Albion Economy Manager <span style='font-size:0.5em; color:#bdc3c7'>EU SERVER</span></h1>", unsafe_allow_html=True)
 
 # Utilisation de conteneurs pour structurer les onglets
 with st.container():
@@ -275,7 +272,7 @@ with tab2:
             st.markdown(f"""
             <div class="albion-metric-box">
                 <div class="metric-label">TRÉSORERIE TOTALE</div>
-                <div class="metric-value {css_class}">{format_monetaire(total)} <span style="font-size:0.4em; vertical-align:middle;">Silver</span></div>
+                <div class="metric-value {css_class}">{format_monetaire(total)} <span style="font-size:0.4em; vertical-align:middle; color:#bdc3c7;">Silver</span></div>
             </div>
             """, unsafe_allow_html=True)
             
