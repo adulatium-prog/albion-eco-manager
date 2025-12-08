@@ -32,13 +32,7 @@ def format_nombre_entier(valeur):
     try: return "{:,.0f}".format(float(valeur)).replace(",", " ")
     except: return str(valeur)
 
-# --- FONCTION INTELLIGENTE (EXTRACTION) ---
 def extraire_noms_et_tags(liste_brute):
-    """
-    Sépare les Noms et les Tags pour que le croisement fonctionne dans tous les cas.
-    Exemple entrée : ["Dog Walkers [WALKR]"]
-    Sortie mémoire : {"dog walkers [walkr]", "dog walkers", "walkr"}
-    """
     resultat = set()
     for item in liste_brute:
         txt = item.strip().lower()
@@ -51,60 +45,71 @@ def extraire_noms_et_tags(liste_brute):
             if tag_seul: resultat.add(tag_seul)
     return resultat
 
-# --- API ALBION ---
+# --- API ALBION (CRAFTER PRIORITAIRE) ---
 def get_player_stats(pseudo):
-    """ Récupère les stats et les infos d'affiliation (Guilde + Alliance) """
+    """ 
+    Récupère le joueur. En cas de doublons, garde celui avec le plus de Craft Fame.
+    """
     try:
         url_search = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
         headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url_search, headers=headers)
         
+        target = None
+        craft_fame_target = -1
+        
         if resp.status_code == 200:
             data = resp.json()
             players = data.get('players', [])
+            candidats = [p for p in players if p['Name'].lower() == pseudo.lower()]
             
-            target = None
-            for p in players:
-                if p['Name'].lower() == pseudo.lower():
-                    target = p
-                    break
-            if not target and players: target = players[0]
+            if not candidats:
+                return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "AllianceTag": "", "Craft Fame": 0, "Trouve": False}
             
-            if target:
-                player_id = target['Id']
-                
-                # Infos préliminaires
-                guild_name = target.get('GuildName') or "Aucune"
-                alliance_name = target.get('AllianceName') or "-"
-                alliance_tag = target.get('AllianceTag') or ""
+            meilleur_fame = -1
+            infos_meilleur = {}
 
-                # Appel détail
-                url_stats = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{player_id}"
-                resp_stats = requests.get(url_stats, headers=headers)
-                craft_fame = 0
+            # Analyse des doublons pour trouver le crafter
+            for p in candidats[:3]:
+                p_id = p['Id']
+                url_details = f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{p_id}"
+                try:
+                    r_det = requests.get(url_details, headers=headers)
+                    if r_det.status_code == 200:
+                        d = r_det.json()
+                        ls = d.get('LifetimeStatistics', {})
+                        crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
+                        val_fame = 0
+                        candidates_val = [d.get('CraftFame'), crafting.get('Total'), crafting.get('craftFame')]
+                        for v in candidates_val:
+                            if isinstance(v, (int, float)):
+                                val_fame = v
+                                break
+                        
+                        if val_fame > meilleur_fame:
+                            meilleur_fame = val_fame
+                            infos_meilleur = d
+                    time.sleep(0.05)
+                except: pass
+
+            if infos_meilleur:
+                target = infos_meilleur
+                craft_fame_target = meilleur_fame
                 
-                if resp_stats.status_code == 200:
-                    info = resp_stats.json()
-                    
-                    if info.get('AllianceName'): alliance_name = info.get('AllianceName')
-                    if info.get('AllianceTag'): alliance_tag = info.get('AllianceTag')
-                    
-                    ls = info.get('LifetimeStatistics', {})
-                    crafting = ls.get('Crafting', {}) or ls.get('crafting', {})
-                    candidates = [info.get('CraftFame'), crafting.get('Total'), crafting.get('craftFame')]
-                    for val in candidates:
-                        if isinstance(val, (int, float)):
-                            craft_fame = val
-                            break
-                            
+                p_name = target.get('Name')
+                g_name = target.get('GuildName') or "Aucune"
+                a_name = target.get('AllianceName') or "-"
+                a_tag = target.get('AllianceTag') or ""
+                
                 return {
-                    "Pseudo": target['Name'], 
-                    "Guilde": guild_name,
-                    "Alliance": alliance_name,
-                    "AllianceTag": alliance_tag,
-                    "Craft Fame": craft_fame, 
+                    "Pseudo": p_name, 
+                    "Guilde": g_name,
+                    "Alliance": a_name,
+                    "AllianceTag": a_tag,
+                    "Craft Fame": craft_fame_target, 
                     "Trouve": True
                 }
+
         return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "AllianceTag": "", "Craft Fame": 0, "Trouve": False}
     except: return {"Pseudo": pseudo, "Guilde": "?", "Alliance": "?", "AllianceTag": "", "Craft Fame": 0, "Trouve": False}
 
@@ -160,7 +165,7 @@ with tab2:
 # --- TAB 3 : ARION SCANNER ---
 with tab3:
     st.subheader("🚀 Arion Scanner")
-    st.info("💡 Colle les permissions. Le scanner détecte les doublons ET suggère les regroupements pertinents (si plusieurs guildes d'une même alliance sont trouvées).")
+    st.info("💡 Colle les permissions. Le scanner détecte les doublons ET propose les joueurs à regrouper par Alliance.")
     
     col_input, col_action = st.columns([2, 1])
     with col_input:
@@ -206,8 +211,19 @@ with tab3:
                 status_doublon = "✅ Unique"
                 detail_doublon = ""
 
+                # --- CONSTRUCTION NOM ALLIANCE UNIQUE ---
+                # On le fait ici pour être sûr que c'est le même partout
+                if infos['Trouve'] and infos['Alliance'] != "-":
+                    if infos['AllianceTag'] and infos['AllianceTag'].lower() not in infos['Alliance'].lower():
+                        nom_alli_display = f"{infos['Alliance']} [{infos['AllianceTag']}]"
+                    else:
+                        nom_alli_display = infos['Alliance']
+                else:
+                    nom_alli_display = infos['Alliance']
+
+                infos['Alliance_Display'] = nom_alli_display
+
                 if infos['Trouve']:
-                    # Données en minuscule
                     g_api = infos['Guilde'].lower()
                     a_name_api = infos['Alliance'].lower()
                     a_tag_api = infos['AllianceTag'].lower()
@@ -223,22 +239,13 @@ with tab3:
 
                     # 2. Collecte pour Intelligence de Groupe
                     if infos['Alliance'] != "-":
-                        nom_alli_propre = infos['Alliance']
-                        if infos['AllianceTag']: nom_alli_propre += f" [{infos['AllianceTag']}]"
-                        
-                        if nom_alli_propre not in groupe_stats:
-                            groupe_stats[nom_alli_propre] = set()
-                        groupe_stats[nom_alli_propre].add(infos['Guilde'])
+                        if nom_alli_display not in groupe_stats:
+                            groupe_stats[nom_alli_display] = set()
+                        groupe_stats[nom_alli_display].add(infos['Guilde'])
 
                 infos['Analyse'] = status_doublon
                 infos['Détail'] = detail_doublon
                 
-                # Affichage propre
-                if infos['AllianceTag'] and infos['AllianceTag'].lower() not in infos['Alliance'].lower():
-                    infos['Alliance_Display'] = f"{infos['Alliance']} [{infos['AllianceTag']}]"
-                else:
-                    infos['Alliance_Display'] = infos['Alliance']
-
                 resultats.append(infos)
                 time.sleep(0.12)
                 barre.progress((i+1)/len(raw_players))
@@ -256,27 +263,30 @@ with tab3:
                 
                 is_already_covered = (alliance_clean in memoire_alliances) or (tag_clean in memoire_alliances and tag_clean != "")
                 
-                # Condition > 1 guilde pour suggérer
                 if not is_already_covered and len(guildes) > 1:
-                     nb_joueurs = sum(1 for r in resultats if r.get('Alliance_Display') == alliance)
+                     # On récupère la liste des joueurs concernés
+                     joueurs_concernes = [r['Pseudo'] for r in resultats if r.get('Alliance_Display') == alliance]
+                     
                      regroupements_possibles.append({
                          "Alliance": alliance,
                          "Nb_Guildes": len(guildes),
                          "Guildes": ", ".join(list(guildes)),
-                         "Nb_Joueurs": nb_joueurs
+                         "Nb_Joueurs": len(joueurs_concernes),
+                         "Liste_Joueurs": joueurs_concernes
                      })
 
             if regroupements_possibles:
-                st.info(f"📢 **{len(regroupements_possibles)} Regroupements Suggérés :** Ces alliances contiennent plusieurs guildes distinctes scannées.")
+                st.info(f"📢 **{len(regroupements_possibles)} Regroupements Suggérés :**")
                 cols_sugg = st.columns(len(regroupements_possibles)) if len(regroupements_possibles) < 4 else st.columns(3)
                 
                 for idx, item in enumerate(regroupements_possibles):
                     with cols_sugg[idx % 3]:
-                        st.markdown(f"""
-                        **🛡️ {item['Alliance']}**
-                        * {item['Nb_Joueurs']} joueurs
-                        * **{item['Nb_Guildes']} Guildes :** {item['Guildes']}
-                        """)
+                        st.markdown(f"**🛡️ {item['Alliance']}**")
+                        st.caption(f"{item['Nb_Guildes']} Guildes : {item['Guildes']}")
+                        
+                        # --- LE BOUTON DEMANDÉ ---
+                        with st.expander(f"👥 Voir {item['Nb_Joueurs']} joueurs"):
+                            st.code(", ".join(item['Liste_Joueurs']), language="text")
 
             df_res = pd.DataFrame(resultats)
             
@@ -312,7 +322,7 @@ with tab3:
     if st.session_state['data_display'] is not None:
         df_show = st.session_state['data_display'].copy()
         
-        # --- MODIFICATION ICI : Formatage des nombres en String pour affichage ---
+        # FORMATAGE SPACÉ
         if 'Craft Fame' in df_show.columns:
             df_show['Craft Fame'] = df_show['Craft Fame'].apply(format_nombre_entier)
 
@@ -324,7 +334,7 @@ with tab3:
         if show_only_dup: df_show = df_show[df_show['Analyse'].str.contains("Doublon")]
 
         cols_conf = {
-            "Craft Fame": st.column_config.TextColumn("Fame Totale"), # Devenu du texte pour afficher les espaces
+            "Craft Fame": st.column_config.TextColumn("Fame Totale"), 
             "Alliance_Display": st.column_config.TextColumn("Alliance"),
             "Analyse": st.column_config.TextColumn("État Liste"),
             "Détail": st.column_config.TextColumn("Raison")
