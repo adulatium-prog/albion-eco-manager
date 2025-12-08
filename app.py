@@ -212,7 +212,6 @@ with tab3:
                 detail_doublon = ""
 
                 # --- CONSTRUCTION NOM ALLIANCE UNIQUE ---
-                # On le fait ici pour être sûr que c'est le même partout
                 if infos['Trouve'] and infos['Alliance'] != "-":
                     if infos['AllianceTag'] and infos['AllianceTag'].lower() not in infos['Alliance'].lower():
                         nom_alli_display = f"{infos['Alliance']} [{infos['AllianceTag']}]"
@@ -253,20 +252,24 @@ with tab3:
             barre.empty()
             status.success(f"Scan terminé !")
 
-            # --- INTELLIGENCE DE GROUPE ---
+            # --- 1. BOITE DES DOUBLONS (NOUVEAU) ---
+            joueurs_doublons = [r['Pseudo'] for r in resultats if "Doublon" in r.get('Analyse', '')]
+            if joueurs_doublons:
+                st.warning(f"⚠️ **{len(joueurs_doublons)} Joueurs déjà couverts (Doublons)**")
+                st.caption("Ces joueurs sont déjà inclus via leur Guilde ou Alliance. Vous pouvez les supprimer de votre liste.")
+                with st.expander("🗑️ Voir les noms à supprimer"):
+                    st.code(", ".join(joueurs_doublons), language="text")
+
+            # --- 2. INTELLIGENCE DE GROUPE ---
             regroupements_possibles = []
             for alliance, guildes in groupe_stats.items():
-                
                 alliance_clean = alliance.split(" [")[0].lower()
                 tag_clean = ""
                 if "[" in alliance: tag_clean = alliance.split("[")[1].replace("]", "").lower()
-                
                 is_already_covered = (alliance_clean in memoire_alliances) or (tag_clean in memoire_alliances and tag_clean != "")
                 
                 if not is_already_covered and len(guildes) > 1:
-                     # On récupère la liste des joueurs concernés
                      joueurs_concernes = [r['Pseudo'] for r in resultats if r.get('Alliance_Display') == alliance]
-                     
                      regroupements_possibles.append({
                          "Alliance": alliance,
                          "Nb_Guildes": len(guildes),
@@ -278,13 +281,10 @@ with tab3:
             if regroupements_possibles:
                 st.info(f"📢 **{len(regroupements_possibles)} Regroupements Suggérés :**")
                 cols_sugg = st.columns(len(regroupements_possibles)) if len(regroupements_possibles) < 4 else st.columns(3)
-                
                 for idx, item in enumerate(regroupements_possibles):
                     with cols_sugg[idx % 3]:
                         st.markdown(f"**🛡️ {item['Alliance']}**")
                         st.caption(f"{item['Nb_Guildes']} Guildes : {item['Guildes']}")
-                        
-                        # --- LE BOUTON DEMANDÉ ---
                         with st.expander(f"👥 Voir {item['Nb_Joueurs']} joueurs"):
                             st.code(", ".join(item['Liste_Joueurs']), language="text")
 
