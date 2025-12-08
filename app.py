@@ -27,6 +27,11 @@ def format_monetaire(valeur):
     try: return "{:,.2f}".format(float(valeur)).replace(",", " ").replace(".", ",")
     except: return str(valeur)
 
+def format_nombre_entier(valeur):
+    """ Formate 1000000 en '1 000 000' """
+    try: return "{:,.0f}".format(float(valeur)).replace(",", " ")
+    except: return str(valeur)
+
 # --- FONCTION INTELLIGENTE (EXTRACTION) ---
 def extraire_noms_et_tags(liste_brute):
     """
@@ -192,7 +197,7 @@ with tab3:
             status = st.empty()
             
             # Pour l'intelligence de groupe
-            groupe_stats = {} # Clé = Nom Alliance, Valeur = Set de guildes
+            groupe_stats = {} 
             
             for i, p_name in enumerate(raw_players):
                 status.text(f"Analyse : {p_name}...")
@@ -207,7 +212,7 @@ with tab3:
                     a_name_api = infos['Alliance'].lower()
                     a_tag_api = infos['AllianceTag'].lower()
                     
-                    # 1. Check Doublons (Liste Input)
+                    # 1. Check Doublons
                     if g_api in memoire_guildes:
                         status_doublon = "⚠️ Doublon (Guilde)"
                         detail_doublon = f"Déjà inclus via Guilde"
@@ -241,19 +246,17 @@ with tab3:
             barre.empty()
             status.success(f"Scan terminé !")
 
-            # --- INTELLIGENCE DE GROUPE (FILTRÉE) ---
+            # --- INTELLIGENCE DE GROUPE ---
             regroupements_possibles = []
             for alliance, guildes in groupe_stats.items():
                 
-                # Vérif si déjà couvert
                 alliance_clean = alliance.split(" [")[0].lower()
                 tag_clean = ""
                 if "[" in alliance: tag_clean = alliance.split("[")[1].replace("]", "").lower()
                 
                 is_already_covered = (alliance_clean in memoire_alliances) or (tag_clean in memoire_alliances and tag_clean != "")
                 
-                # LA MODIF EST ICI : len(guildes) > 1 
-                # On ne propose QUE si il y a plus d'une guilde différente
+                # Condition > 1 guilde pour suggérer
                 if not is_already_covered and len(guildes) > 1:
                      nb_joueurs = sum(1 for r in resultats if r.get('Alliance_Display') == alliance)
                      regroupements_possibles.append({
@@ -264,20 +267,16 @@ with tab3:
                      })
 
             if regroupements_possibles:
-                st.info(f"📢 **{len(regroupements_possibles)} Regroupements Suggérés :** Ces alliances contiennent plusieurs guildes distinctes. Vous devriez les ajouter à votre liste.")
+                st.info(f"📢 **{len(regroupements_possibles)} Regroupements Suggérés :** Ces alliances contiennent plusieurs guildes distinctes scannées.")
                 cols_sugg = st.columns(len(regroupements_possibles)) if len(regroupements_possibles) < 4 else st.columns(3)
                 
                 for idx, item in enumerate(regroupements_possibles):
                     with cols_sugg[idx % 3]:
                         st.markdown(f"""
                         **🛡️ {item['Alliance']}**
-                        * {item['Nb_Joueurs']} joueurs concernés
+                        * {item['Nb_Joueurs']} joueurs
                         * **{item['Nb_Guildes']} Guildes :** {item['Guildes']}
                         """)
-            else:
-                # Optionnel : petit message si rien à regrouper mais que le scan a marché
-                if resultats:
-                    st.caption("✅ Aucun regroupement multi-guildes évident détecté.")
 
             df_res = pd.DataFrame(resultats)
             
@@ -313,6 +312,10 @@ with tab3:
     if st.session_state['data_display'] is not None:
         df_show = st.session_state['data_display'].copy()
         
+        # --- MODIFICATION ICI : Formatage des nombres en String pour affichage ---
+        if 'Craft Fame' in df_show.columns:
+            df_show['Craft Fame'] = df_show['Craft Fame'].apply(format_nombre_entier)
+
         c_search, c_filter = st.columns(2)
         with c_search: search = st.text_input("🔎 Filtrer", "")
         with c_filter: show_only_dup = st.checkbox("Montrer uniquement les Doublons", False)
@@ -321,7 +324,7 @@ with tab3:
         if show_only_dup: df_show = df_show[df_show['Analyse'].str.contains("Doublon")]
 
         cols_conf = {
-            "Craft Fame": st.column_config.NumberColumn("Fame Totale", format="%d"),
+            "Craft Fame": st.column_config.TextColumn("Fame Totale"), # Devenu du texte pour afficher les espaces
             "Alliance_Display": st.column_config.TextColumn("Alliance"),
             "Analyse": st.column_config.TextColumn("État Liste"),
             "Détail": st.column_config.TextColumn("Raison")
