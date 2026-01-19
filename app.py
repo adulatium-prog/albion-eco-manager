@@ -290,7 +290,7 @@ with tab1:
         with st.form("ajout", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1: type_op = st.radio("Type", ["Recette (+)", "Dépense (-)"], horizontal=True)
-            with c2: batiment = st.selectbox("Plot / Activité", ["Cook", "Hunter", "Weaver", "Mage", "Taxe Guilde", "Autre"])
+            with c2: batiment = st.selectbox("Plot", ["Cook", "Hunter", "Weaver", "Mage", "Taxe Guilde", "Autre"])
             
             montant = st.number_input("Montant (Silver)", step=10000, format="%d")
             note = st.text_input("Description (Optionnel)")
@@ -298,12 +298,13 @@ with tab1:
             submitted = st.form_submit_button("Valider (Signer)", use_container_width=True)
             if submitted:
                 try:
+                    # CORRECTION : On envoie les données dans l'ordre du GSheet
                     worksheet.append_row([datetime.now().strftime("%d/%m"), batiment, type_op, montant, note])
                     st.toast(f"Transaction de {format_monetaire(montant)} Silver enregistrée !", icon="📜")
                     st.cache_data.clear()
                 except Exception as e: st.error(str(e))
 
-# --- TAB 2 : ANALYSE (MISE A JOUR) ---
+# --- TAB 2 : ANALYSE (CORRIGÉE : Utilise "Plot" au lieu de "Plot / Activité") ---
 with tab2:
     st.markdown("<h3 class='albion-font'>État des Finances</h3>", unsafe_allow_html=True)
     try:
@@ -315,9 +316,8 @@ with tab2:
             total = df['Reel'].sum()
             
             # --- CALCULS ADDITIONNELS (Recettes vs Dépenses) ---
-            # On filtre sur la colonne Reel : > 0 sont les recettes, < 0 sont les dépenses
             total_recettes = df[df['Reel'] > 0]['Reel'].sum()
-            total_depenses = df[df['Reel'] < 0]['Reel'].sum() # C'est un nombre négatif
+            total_depenses = df[df['Reel'] < 0]['Reel'].sum() 
 
             # --- 1. GLOBAL (SOLDE) ---
             css_class = "val-pos" if total >= 0 else "val-neg"
@@ -364,8 +364,8 @@ with tab2:
                 "Taxe Guilde": "🏰"
             }
 
-            # Groupement par 'Plot / Activité' et somme de 'Reel'
-            stats_plots = df.groupby('Plot / Activité')['Reel'].sum()
+            # Groupement par 'Plot' (le nom de ta colonne B)
+            stats_plots = df.groupby('Plot')['Reel'].sum()
 
             # Affichage en colonnes dynamiques
             cols = st.columns(len(targets))
@@ -389,7 +389,8 @@ with tab2:
             
             # Copie pour affichage propre
             df_display = df.tail(10).sort_index(ascending=False).copy()
-            df_display = df_display[['Date', 'Plot / Activité', 'Type', 'Montant', 'Note']]
+            # On utilise 'Plot' ici aussi
+            df_display = df_display[['Date', 'Plot', 'Type', 'Montant', 'Note']]
             
             st.dataframe(
                 df_display, 
@@ -401,7 +402,7 @@ with tab2:
 
     except Exception as e: 
         st.warning("Le livre de comptes est vide ou inaccessible.")
-        # st.error(f"Debug: {e}")
+        st.error(f"Debug: {e}")
 
 # --- TAB 3 : ARION SCANNER ---
 with tab3:
