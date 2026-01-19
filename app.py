@@ -10,12 +10,12 @@ from datetime import datetime
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Albion Economy Manager", page_icon="⚔️", layout="wide")
 
-# Injection du CSS (Style "Silver" + Fond Dégradé + Boutons Arrondis)
+# Injection du CSS (Style "Silver" + Fond Dégradé + Boutons Arrondis + NOUVELLES CARTES)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@400;700&display=swap');
 
-    /* --- 1. FOND D'ÉCRAN (VOTRE DÉGRADÉ) --- */
+    /* --- 1. FOND D'ÉCRAN --- */
     .stApp {
         background-image: linear-gradient(to right bottom, #0f0c29, #302b63, #24243e);
         color: #ecf0f1;
@@ -24,10 +24,10 @@ st.markdown("""
 
     /* --- 2. BOUTONS ARRONDIS --- */
     .stButton > button {
-        background: linear-gradient(180deg, #d35400, #a04000); /* Orange "Albion" conservé pour le contraste */
+        background: linear-gradient(180deg, #d35400, #a04000);
         color: white;
         border: 1px solid #e67e22;
-        border-radius: 20px; /* Arrondis demandés */
+        border-radius: 20px;
         font-family: 'Cinzel', serif;
         font-weight: bold;
         text-transform: uppercase;
@@ -41,15 +41,15 @@ st.markdown("""
         box-shadow: 0 0 15px rgba(211, 84, 0, 0.6);
     }
 
-    /* --- 3. TYPOGRAPHIE (MODIFICATION COULEUR) --- */
+    /* --- 3. TYPOGRAPHIE --- */
     h1, h2, h3, .albion-font {
         font-family: 'Cinzel', serif !important;
-        color: #ecf0f1 !important; /* REMPLACEMENT DU JAUNE PAR BLANC ARGENTÉ */
+        color: #ecf0f1 !important;
         text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         font-weight: 700;
     }
 
-    /* --- ELEMENTS D'INTERFACE (Inputs) --- */
+    /* --- ELEMENTS D'INTERFACE --- */
     .stTextInput > div > div > input, .stNumberInput > div > div > input, .stSelectbox > div > div > div {
         background-color: rgba(255, 255, 255, 0.05);
         color: white;
@@ -73,7 +73,7 @@ st.markdown("""
     }
     .stTabs [aria-selected="true"] {
         background-color: rgba(255, 255, 255, 0.1);
-        color: #ffffff; /* Actif en blanc pur */
+        color: #ffffff;
         border-radius: 10px;
         font-weight: bold;
     }
@@ -81,7 +81,7 @@ st.markdown("""
     /* --- CONTAINERS & BOITES --- */
     [data-testid="stExpander"], [data-testid="stForm"], [data-testid="stMetricValue"] {
         background-color: rgba(0, 0, 0, 0.25);
-        border: 1px solid rgba(255, 255, 255, 0.1); /* Bordure discrète */
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 15px;
     }
     
@@ -90,7 +90,7 @@ st.markdown("""
         background: rgba(0, 0, 0, 0.3);
         padding: 20px;
         border-radius: 20px;
-        border: 1px solid rgba(236, 240, 241, 0.3); /* Bordure Argentée */
+        border: 1px solid rgba(236, 240, 241, 0.3);
         text-align: center;
         box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
@@ -108,9 +108,40 @@ st.markdown("""
         font-weight: bold;
         text-shadow: 0 0 20px rgba(255,255,255,0.1);
     }
-    /* Couleurs conditionnelles pour le solde */
-    .val-pos { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.4); } /* Vert */
-    .val-neg { color: #ff6b6b; text-shadow: 0 0 15px rgba(255, 107, 107, 0.5); } /* Rouge pastel (plus lisible) */
+    
+    /* --- NOUVEAU : CARTES PLOTS / ACTIVITÉS --- */
+    .plot-card {
+        background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.2) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 15px;
+        padding: 15px;
+        text-align: center;
+        transition: transform 0.2s;
+        margin-bottom: 10px;
+    }
+    .plot-card:hover {
+        border-color: #f39c12; /* Bordure dorée au survol */
+        transform: translateY(-5px);
+        background: rgba(255,255,255,0.08);
+    }
+    .plot-icon { font-size: 2em; margin-bottom: 5px; display: block;}
+    .plot-title {
+        font-family: 'Cinzel', serif;
+        color: #f39c12;
+        font-size: 0.85em;
+        text-transform: uppercase;
+        font-weight: bold;
+    }
+    .plot-value {
+        font-family: 'Roboto', sans-serif;
+        font-size: 1.1em;
+        font-weight: 700;
+        margin-top: 5px;
+    }
+
+    /* Couleurs conditionnelles */
+    .val-pos { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.4); } 
+    .val-neg { color: #ff6b6b; text-shadow: 0 0 15px rgba(255, 107, 107, 0.5); } 
 
 </style>
 """, unsafe_allow_html=True)
@@ -257,17 +288,18 @@ with tab1:
                     st.cache_data.clear()
                 except Exception as e: st.error(str(e))
 
-# --- TAB 2 : ANALYSE ---
+# --- TAB 2 : ANALYSE (MISE A JOUR) ---
 with tab2:
     st.markdown("<h3 class='albion-font'>État des Finances</h3>", unsafe_allow_html=True)
     try:
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
+            # Calcul du Montant Réel (Positif ou Négatif)
             df['Reel'] = df.apply(lambda x: -x['Montant'] if "Dépense" in str(x['Type']) else x['Montant'], axis=1)
             total = df['Reel'].sum()
             
-            # --- CUSTOM VISUAL COMPONENT POUR LE SOLDE ALBION ---
+            # --- 1. GLOBAL ---
             css_class = "val-pos" if total >= 0 else "val-neg"
             st.markdown(f"""
             <div class="albion-metric-box">
@@ -280,9 +312,57 @@ with tab2:
                 st.warning("⚠️ Attention : Votre solde est négatif (Dette).")
 
             st.divider()
+
+            # --- 2. DÉTAIL PAR PLOT (Weaver, Mage, Hunter, Cook...) ---
+            st.markdown("<h4 class='albion-font'>Rentabilité par Activité</h4>", unsafe_allow_html=True)
+
+            # Configuration des cibles à afficher
+            targets = {
+                "Weaver": "🧵",
+                "Mage": "🔮",
+                "Hunter": "🏹",
+                "Cook": "🍖",
+                "Taxe Guilde": "🏰"
+            }
+
+            # Groupement par 'Plot / Activité' et somme de 'Reel'
+            stats_plots = df.groupby('Plot / Activité')['Reel'].sum()
+
+            # Affichage en colonnes dynamiques
+            cols = st.columns(len(targets))
+            
+            for idx, (plot_name, icon) in enumerate(targets.items()):
+                valeur = stats_plots.get(plot_name, 0) # 0 si aucune transaction trouvée pour ce plot
+                color_class = "val-pos" if valeur >= 0 else "val-neg"
+                
+                with cols[idx]:
+                    st.markdown(f"""
+                    <div class="plot-card">
+                        <span class="plot-icon">{icon}</span>
+                        <div class="plot-title">{plot_name}</div>
+                        <div class="plot-value {color_class}">{format_nombre_entier(valeur)}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # --- 3. HISTORIQUE ---
+            st.divider()
             st.markdown("<h4 class='albion-font'>Historique Récent</h4>", unsafe_allow_html=True)
-            st.dataframe(df.tail(10).sort_index(ascending=False), use_container_width=True)
-    except: st.warning("Le livre de comptes est vide.")
+            
+            # Copie pour affichage propre (sans la colonne 'Reel' visible)
+            df_display = df.tail(10).sort_index(ascending=False).copy()
+            df_display = df_display[['Date', 'Plot / Activité', 'Type', 'Montant', 'Note']]
+            
+            st.dataframe(
+                df_display, 
+                use_container_width=True,
+                column_config={
+                    "Montant": st.column_config.NumberColumn(format="%d 💰")
+                }
+            )
+
+    except Exception as e: 
+        st.warning("Le livre de comptes est vide ou inaccessible.")
+        # st.error(f"Debug: {e}")
 
 # --- TAB 3 : ARION SCANNER ---
 with tab3:
@@ -309,7 +389,7 @@ with tab3:
             except: pass
 
     if scan_btn and raw_text:
-        # --- LOGIQUE SCAN (Identique) ---
+        # --- LOGIQUE SCAN ---
         with st.spinner("Consultation des archives Albion..."):
             guildes_brutes = re.findall(r'"Guild:([^"]+)"', raw_text)
             alliances_brutes = re.findall(r'"Alliance:([^"]+)"', raw_text)
