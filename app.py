@@ -10,7 +10,7 @@ from datetime import datetime
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Albion Economy Manager", page_icon="⚔️", layout="wide")
 
-# Injection du CSS (Style "Silver" + Fond Dégradé + Boutons Arrondis + NOUVELLES CARTES)
+# Injection du CSS
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@400;700&display=swap');
@@ -93,6 +93,7 @@ st.markdown("""
         border: 1px solid rgba(236, 240, 241, 0.3);
         text-align: center;
         box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        margin-bottom: 20px;
     }
     .metric-label {
         color: #bdc3c7;
@@ -109,7 +110,22 @@ st.markdown("""
         text-shadow: 0 0 20px rgba(255,255,255,0.1);
     }
     
-    /* --- NOUVEAU : CARTES PLOTS / ACTIVITÉS --- */
+    /* --- NOUVEAU : BLOCS RECETTES / DÉPENSES --- */
+    .summary-card {
+        padding: 15px;
+        border-radius: 15px;
+        text-align: center;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    .sc-green { background: rgba(46, 204, 113, 0.1); border-color: rgba(46, 204, 113, 0.3); }
+    .sc-red { background: rgba(231, 76, 60, 0.1); border-color: rgba(231, 76, 60, 0.3); }
+    
+    .sc-title { font-family: 'Cinzel', serif; font-size: 0.9em; opacity: 0.8; margin-bottom: 5px; }
+    .sc-val { font-family: 'Roboto', sans-serif; font-size: 1.4em; font-weight: bold; }
+    .txt-green { color: #2ecc71; }
+    .txt-red { color: #ff6b6b; }
+
+    /* --- CARTES PLOTS / ACTIVITÉS --- */
     .plot-card {
         background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.2) 100%);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -120,7 +136,7 @@ st.markdown("""
         margin-bottom: 10px;
     }
     .plot-card:hover {
-        border-color: #f39c12; /* Bordure dorée au survol */
+        border-color: #f39c12;
         transform: translateY(-5px);
         background: rgba(255,255,255,0.08);
     }
@@ -139,7 +155,6 @@ st.markdown("""
         margin-top: 5px;
     }
 
-    /* Couleurs conditionnelles */
     .val-pos { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.4); } 
     .val-neg { color: #ff6b6b; text-shadow: 0 0 15px rgba(255, 107, 107, 0.5); } 
 
@@ -295,25 +310,49 @@ with tab2:
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
-            # Calcul du Montant Réel (Positif ou Négatif)
+            # Calcul du Montant Réel (Positif ou Négatif) pour le solde global
             df['Reel'] = df.apply(lambda x: -x['Montant'] if "Dépense" in str(x['Type']) else x['Montant'], axis=1)
             total = df['Reel'].sum()
             
-            # --- 1. GLOBAL ---
+            # --- CALCULS ADDITIONNELS (Recettes vs Dépenses) ---
+            # On filtre sur la colonne Reel : > 0 sont les recettes, < 0 sont les dépenses
+            total_recettes = df[df['Reel'] > 0]['Reel'].sum()
+            total_depenses = df[df['Reel'] < 0]['Reel'].sum() # C'est un nombre négatif
+
+            # --- 1. GLOBAL (SOLDE) ---
             css_class = "val-pos" if total >= 0 else "val-neg"
             st.markdown(f"""
             <div class="albion-metric-box">
-                <div class="metric-label">TRÉSORERIE TOTALE</div>
+                <div class="metric-label">TRÉSORERIE NETTE (SOLDE)</div>
                 <div class="metric-value {css_class}">{format_monetaire(total)} <span style="font-size:0.4em; vertical-align:middle; color:#bdc3c7;">Silver</span></div>
             </div>
             """, unsafe_allow_html=True)
             
+            # --- 2. RÉCAP RECETTES / DÉPENSES ---
+            c_gains, c_pertes = st.columns(2)
+            with c_gains:
+                st.markdown(f"""
+                <div class="summary-card sc-green">
+                    <div class="sc-title">CUMUL RECETTES (+)</div>
+                    <div class="sc-val txt-green">+{format_monetaire(total_recettes)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with c_pertes:
+                st.markdown(f"""
+                <div class="summary-card sc-red">
+                    <div class="sc-title">CUMUL DÉPENSES (-)</div>
+                    <div class="sc-val txt-red">{format_monetaire(total_depenses)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
             if total < 0:
+                st.write("")
                 st.warning("⚠️ Attention : Votre solde est négatif (Dette).")
 
             st.divider()
 
-            # --- 2. DÉTAIL PAR PLOT (Weaver, Mage, Hunter, Cook...) ---
+            # --- 3. DÉTAIL PAR PLOT (Weaver, Mage, Hunter, Cook...) ---
             st.markdown("<h4 class='albion-font'>Rentabilité par Activité</h4>", unsafe_allow_html=True)
 
             # Configuration des cibles à afficher
@@ -332,7 +371,7 @@ with tab2:
             cols = st.columns(len(targets))
             
             for idx, (plot_name, icon) in enumerate(targets.items()):
-                valeur = stats_plots.get(plot_name, 0) # 0 si aucune transaction trouvée pour ce plot
+                valeur = stats_plots.get(plot_name, 0)
                 color_class = "val-pos" if valeur >= 0 else "val-neg"
                 
                 with cols[idx]:
@@ -344,11 +383,11 @@ with tab2:
                     </div>
                     """, unsafe_allow_html=True)
 
-            # --- 3. HISTORIQUE ---
+            # --- 4. HISTORIQUE ---
             st.divider()
             st.markdown("<h4 class='albion-font'>Historique Récent</h4>", unsafe_allow_html=True)
             
-            # Copie pour affichage propre (sans la colonne 'Reel' visible)
+            # Copie pour affichage propre
             df_display = df.tail(10).sort_index(ascending=False).copy()
             df_display = df_display[['Date', 'Plot / Activité', 'Type', 'Montant', 'Note']]
             
