@@ -12,6 +12,29 @@ from collections import Counter
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Albion Economy Manager", page_icon="⚔️", layout="wide")
 
+# --- SÉCURITÉ ---
+def check_password():
+    """Vérifie le mot de passe avant d'afficher l'app."""
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    if not st.session_state["password_correct"]:
+        st.markdown("<h2 style='text-align: center; color: #ecf0f1; font-family: Cinzel, serif;'>🔒 Accès Sécurisé - Code Albion</h2>", unsafe_allow_html=True)
+        pwd = st.text_input("Mot de passe", type="password")
+        if st.button("Valider"):
+            # Remplace "Albion2024!" par le mot de passe de ton choix, ou utilise st.secrets
+            if pwd == st.secrets.get("app_password", "Albion2024!"): 
+                st.session_state["password_correct"] = True
+                st.rerun()
+            else:
+                st.error("❌ Mot de passe incorrect")
+        return False
+    return True
+
+if not check_password():
+    st.stop()
+
+# --- STYLE CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@400;700&display=swap');
@@ -39,7 +62,9 @@ st.markdown("""
     .plot-value { font-family: 'Roboto', sans-serif; font-size: 1.2em; font-weight: 700; margin-top: 5px; }
     .archived-plot { opacity: 0.6; filter: grayscale(50%); border-color: rgba(255,255,255,0.05); }
     .archived-plot:hover { opacity: 1; filter: grayscale(0%); }
-    .typo-header { color: #ecf0f1; font-family: 'Cinzel', serif; font-size: 1.2em; margin-top: 20px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px; margin-bottom: 15px; }
+    .family-label { background: linear-gradient(90deg, rgba(243, 156, 18, 0.2) 0%, rgba(0,0,0,0.2) 100%); border-left: 5px solid #f39c12; padding: 10px 20px; border-radius: 8px; margin-top: 25px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+    .family-name { font-family: 'Cinzel', serif; font-size: 1.3em; font-weight: bold; color: #ecf0f1; letter-spacing: 1px;}
+    .family-total { font-size: 1.3em; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -89,7 +114,6 @@ def get_player_stats(pseudo):
                     "Pseudo": infos_meilleur.get('Name'), 
                     "Guilde": infos_meilleur.get('GuildName') or "Aucune",
                     "Alliance": infos_meilleur.get('AllianceName') or "-", 
-                    "AllianceTag": infos_meilleur.get('AllianceTag') or "",
                     "Craft Fame": meilleur_fame, 
                     "Trouve": True
                 }
@@ -111,7 +135,7 @@ except Exception as e:
     st.error(f"❌ Erreur connexion Google Sheets : {e}")
     st.stop()
 
-# --- ANALYSE DES PLOTS (ACTIFS vs ARCHIVÉS) ---
+# --- ANALYSE DES PLOTS ---
 data_journal = worksheet.get_all_records()
 df_journal = pd.DataFrame(data_journal) if data_journal else pd.DataFrame(columns=['Date', 'Plot', 'Type', 'Montant', 'Note'])
 
@@ -136,7 +160,6 @@ with tab1:
         with st.container(border=True):
             options_cibles = plots_actifs + ["---", "Taxe Guilde", "Autre"]
             nom_plot = st.selectbox("📍 Cible de l'opération :", options_cibles)
-            
             type_op = st.radio("Type d'opération", ["Recette (+)", "Dépense (-)"], horizontal=True)
             montant = st.number_input("Montant (Silver)", step=10000, format="%d", min_value=1)
             note = st.text_input("Description (Optionnel)")
@@ -155,7 +178,6 @@ with tab1:
 
     with col_gestion:
         st.markdown("<h3 class='albion-font'>Gestion du Parc 🏗️</h3>", unsafe_allow_html=True)
-        
         with st.expander("🟢 Acheter / Ouvrir un nouveau plot", expanded=False):
             nouveau_nom = st.text_input("Nom du plot (ex: Fibre Mars)")
             cout_initial = st.number_input("Coût d'achat initial (Silver)", step=1000000, format="%d", min_value=0)
@@ -175,7 +197,6 @@ with tab1:
             st.write("Retire un plot de la liste active et archive ses bénéfices.")
             plot_a_fermer = st.selectbox("Plot à clôturer", plots_actifs)
             prix_revente = st.number_input("Prix de revente / récupération (Silver)", step=1000000, format="%d", min_value=0, value=0)
-            
             if st.button("Confirmer la clôture", use_container_width=True):
                 if plot_a_fermer:
                     try:
@@ -212,8 +233,6 @@ with tab2:
             st.session_state['date_fin'] = d_max
 
         st.markdown("<div style='background:rgba(255,255,255,0.05); padding:15px; border-radius:10px; margin-bottom:20px;'>", unsafe_allow_html=True)
-        st.write("#### 📅 Filtrer par date (Cycle)")
-        
         col_d1, col_d2, col_btn = st.columns([2, 2, 1])
         with col_d1: date_debut = st.date_input("Début", key="date_debut")
         with col_d2: date_fin = st.date_input("Fin", key="date_fin")
@@ -221,15 +240,12 @@ with tab2:
             st.write("")
             st.write("")
             st.button("🔄 Afficher le Total", on_click=reset_dates_totales, args=(min_date_globale, max_date_globale), use_container_width=True)
-            
         st.markdown("</div>", unsafe_allow_html=True)
 
         mask = (df_journal['Date_Obj'].dt.date >= date_debut) & (df_journal['Date_Obj'].dt.date <= date_fin)
         df_filtre = df_journal.loc[mask]
 
-        if df_filtre.empty:
-            st.warning("Aucune transaction trouvée sur cette période.")
-        else:
+        if not df_filtre.empty:
             total = df_filtre['Reel'].sum()
             total_recettes = df_filtre[df_filtre['Reel'] > 0]['Reel'].sum()
             total_depenses = df_filtre[df_filtre['Reel'] < 0]['Reel'].sum() 
@@ -248,8 +264,8 @@ with tab2:
 
             st.divider()
 
-            # --- PLOTS ACTIFS AVEC SOUS-TOTAUX ---
-            st.markdown(f"<h4 class='albion-font'>🟢 Bilan des Plots Actifs (Par Typologie)</h4>", unsafe_allow_html=True)
+            # --- PLOTS ACTIFS AVEC ÉTIQUETTES CLASSIQUES ---
+            st.markdown(f"<h4 class='albion-font'>🟢 Bilan des Plots Actifs (Par Famille)</h4>", unsafe_allow_html=True)
             stats_plots = df_filtre.groupby('Plot')['Reel'].sum()
             
             plots_with_typo = []
@@ -261,12 +277,19 @@ with tab2:
             df_plots = pd.DataFrame(plots_with_typo)
             
             if not df_plots.empty:
-                # Tri des typologies pour un affichage propre
                 for typo, group in df_plots.groupby('typo'):
                     subtotal = group['valeur'].sum()
-                    sub_class = "txt-green" if subtotal >= 0 else "txt-red"
-                    st.markdown(f"<div class='typo-header'>🔹 {typo} | Sous-total : <span class='{sub_class}'>{format_nombre_entier(subtotal)}</span></div>", unsafe_allow_html=True)
+                    sub_class = "val-pos" if subtotal >= 0 else "val-neg"
                     
+                    # L'étiquette de la famille
+                    st.markdown(f"""
+                    <div class="family-label">
+                        <span class="family-name">🏷️ FAMILLE : {typo}</span>
+                        <span class="family-total {sub_class}">{format_nombre_entier(subtotal)} <span style="font-size:0.6em; color:#bdc3c7;">Silver</span></span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Les plots juste en dessous
                     cols = st.columns(4)
                     for idx, row in enumerate(group.itertuples()):
                         color_class = "val-pos" if row.valeur >= 0 else "val-neg"
@@ -278,39 +301,18 @@ with tab2:
                             </div>
                             """, unsafe_allow_html=True)
 
-            # --- ARCHIVES (PLOTS CLÔTURÉS) ---
-            if plots_clotures:
-                st.markdown("<br><h4 class='albion-font' style='color:#7f8c8d !important;'>🔴 Archives (Plots Clôturés)</h4>", unsafe_allow_html=True)
-                cols_arch = st.columns(5)
-                idx_arch = 0
-                for plot_name in plots_clotures:
-                    valeur = stats_plots.get(plot_name, 0)
-                    if valeur != 0: 
-                        color_class = "val-pos" if valeur >= 0 else "val-neg"
-                        with cols_arch[idx_arch % 5]:
-                            st.markdown(f"""
-                            <div class="plot-card archived-plot">
-                                <div class="plot-title" style="color:#bdc3c7;">{plot_name}</div>
-                                <div class="plot-value {color_class}">{format_nombre_entier(valeur)}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        idx_arch += 1
-
             st.divider()
             st.markdown("<h4 class='albion-font'>Historique Détaillé</h4>", unsafe_allow_html=True)
             df_display = df_filtre.sort_values(by='Date_Obj', ascending=False).copy()
             st.dataframe(df_display[['Date', 'Plot', 'Type', 'Montant', 'Note']], use_container_width=True, column_config={"Montant": st.column_config.NumberColumn(format="%d 💰")})
 
-    else:
-        st.warning("Le livre de comptes est vide.")
-
 # --- TAB 3 : ARION SCANNER ---
 with tab3:
-    st.markdown("<h3 class='albion-font'>Scanner de Guildes</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='albion-font'>Scanner de Guildes & Alliances</h3>", unsafe_allow_html=True)
     col_input, col_action = st.columns([3, 1], gap="medium")
     with col_input:
         if 'json_input' not in st.session_state: st.session_state['json_input'] = ""
-        raw_text = st.text_area("Permissions JSON/Texte", value=st.session_state['json_input'], height=200)
+        raw_text = st.text_area("Permissions JSON/Texte", value=st.session_state['json_input'], height=200, help="Collez ici l'export de votre plot.")
     with col_action:
         st.write("### Actions")
         scan_btn = st.button("Lancer l'Analyse", type="primary", use_container_width=True)
@@ -320,13 +322,11 @@ with tab3:
     if 'data_display' not in st.session_state: st.session_state['data_display'] = None
 
     if scan_btn and raw_text:
-        with st.spinner("Consultation des archives et analyse des doublons..."):
-            # Extraction de tous les noms (avec doublons potentiels dans le texte brut)
+        with st.spinner("Consultation des archives et comptage des membres..."):
             raw_players_all = re.findall(r'"Player:([^"]+)"', raw_text)
             counts = Counter([p.lower() for p in raw_players_all])
-            raw_players = list(set(raw_players_all)) # Noms uniques pour requêter l'API
+            raw_players = list(set(raw_players_all))
             
-            # Chargement de la référence pour repérer les nouveaux / anciens
             ref_players = []
             if ws_ref:
                 try:
@@ -343,9 +343,8 @@ with tab3:
                     infos = get_player_stats(p_name)
                     p_lower = str(infos.get('Pseudo', p_name)).lower()
                     
-                    # Ajout des données d'analyse de la guilde/doublons
                     infos['Occurrences'] = counts.get(p_lower, 1)
-                    infos['Statut'] = "✅ Déjà connu" if p_lower in ref_players else "🆕 Nouveau"
+                    infos['Statut'] = "✅ Connu" if p_lower in ref_players else "🆕 Nouveau"
                     
                     resultats.append(infos)
                     barre.progress((i+1)/len(raw_players))
@@ -353,8 +352,7 @@ with tab3:
                     
                 barre.empty()
                 st.toast("Scan terminé !", icon="✅")
-                df_res = pd.DataFrame(resultats)
-                st.session_state['data_display'] = df_res
+                st.session_state['data_display'] = pd.DataFrame(resultats)
 
     if save_ref_btn and st.session_state['data_display'] is not None and ws_ref:
         try:
@@ -365,14 +363,34 @@ with tab3:
         except: pass
 
     if st.session_state['data_display'] is not None:
+        df_res = st.session_state['data_display']
+        
+        # --- ANALYSE DE LA PLACE (GUILDES / ALLIANCES) ---
+        st.markdown("#### 📊 Analyse de l'occupation")
+        col_g, col_a = st.columns(2)
+        
+        with col_g:
+            st.write("**Top Guildes présentes sur le plot :**")
+            guild_counts = df_res[df_res['Guilde'] != 'Aucune']['Guilde'].value_counts().reset_index()
+            guild_counts.columns = ['Guilde', 'Nombre de Joueurs']
+            st.dataframe(guild_counts, use_container_width=True)
+            
+        with col_a:
+            st.write("**Top Alliances présentes sur le plot :**")
+            alliance_counts = df_res[df_res['Alliance'] != '-']['Alliance'].value_counts().reset_index()
+            alliance_counts.columns = ['Alliance', 'Nombre de Joueurs']
+            st.dataframe(alliance_counts, use_container_width=True)
+            
+        st.divider()
+        st.markdown("#### 📋 Détail des joueurs")
         st.dataframe(
-            st.session_state['data_display'], 
+            df_res, 
             use_container_width=True, 
-            height=500,
+            height=400,
             column_config={
                 "Guilde": st.column_config.TextColumn("Guilde 🛡️"),
                 "Alliance": st.column_config.TextColumn("Alliance ⚔️"),
-                "Occurrences": st.column_config.NumberColumn("Doublons 🔄", help="Nombre de fois où ce joueur apparaît dans le texte collé"),
-                "Statut": st.column_config.TextColumn("Statut Réf. 📌", help="Compare avec les joueurs déjà sauvegardés dans Google Sheets")
+                "Occurrences": st.column_config.NumberColumn("Doublons 🔄", help="Combien de fois le joueur est collé"),
+                "Statut": st.column_config.TextColumn("Statut Réf. 📌")
             }
         )
