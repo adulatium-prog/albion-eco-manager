@@ -12,20 +12,35 @@ from collections import Counter
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Albion Economy Manager", page_icon="⚔️", layout="wide")
 
-# --- STYLE CSS (AVEC WALLPAPER) ---
-st.markdown("""
+# --- GESTION DYNAMIQUE DU FOND D'ÉCRAN ---
+# On vérifie si l'utilisateur est connecté pour adapter l'opacité du filtre
+est_connecte = st.session_state.get("password_correct", False)
+
+if est_connecte:
+    # FOND SOMBRE : Pour les pages de l'app (opacité très forte pour bien lire les chiffres)
+    calque_fond = "linear-gradient(rgba(15, 12, 41, 0.7), rgba(36, 36, 62, 0.98))"
+else:
+    # FOND CLAIR : Pour la page d'accueil (opacité légère pour profiter de l'image)
+    calque_fond = "linear-gradient(rgba(15, 12, 41, 0.4), rgba(36, 36, 62, 0.7))"
+
+# 1. Injection du fond dynamique
+st.markdown(f"""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@400;700&display=swap');
-    
-    /* Ajout du fond d'écran Albion avec un filtre sombre pour la lisibilité */
-    .stApp { 
-        background-image: linear-gradient(rgba(15, 12, 41, 0.8), rgba(36, 36, 62, 0.9)), url('https://albiononlinetools.com/assets/img/albionCrafting.jpg'); 
+    .stApp {{ 
+        background-image: {calque_fond}, url('https://albiononlinetools.com/assets/img/albionCrafting.jpg'); 
         background-size: cover; 
         background-position: center;
         background-attachment: fixed;
         color: #ecf0f1; 
         font-family: 'Roboto', sans-serif; 
-    }
+    }}
+</style>
+""", unsafe_allow_html=True)
+
+# 2. Injection du reste du style (Statique)
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@400;700&display=swap');
     
     /* Cacher la bordure en haut par défaut de Streamlit */
     [data-testid="stHeader"] { background: transparent !important; }
@@ -74,7 +89,7 @@ def check_password():
 
     if not st.session_state["password_correct"]:
         # Création de colonnes vides pour centrer la box de connexion
-        st.markdown("<br><br><br>", unsafe_allow_html=True) # Espace en haut
+        st.markdown("<br><br><br>", unsafe_allow_html=True) 
         col1, col2, col3 = st.columns([1, 1.5, 1])
         
         with col2:
@@ -84,7 +99,7 @@ def check_password():
             with st.form("login_form"):
                 pwd = st.text_input("🔑 Mot de passe d'accès", type="password")
                 st.markdown("<br>", unsafe_allow_html=True)
-                submit = st.form_submit_button("A R I O N", use_container_width=True)
+                submit = st.form_submit_button("Entrer dans l'Empire", use_container_width=True)
                 
                 if submit:
                     if pwd == st.secrets.get("app_password", "Albion2024!"): 
@@ -97,6 +112,10 @@ def check_password():
 
 if not check_password():
     st.stop()
+
+# --- LA SUITE DU CODE NE CHANGE PAS ---
+# --- CONFIGURATION FICHIERS ---
+# ...
 
 # --- LA SUITE DU CODE NE CHANGE PAS ---
 # --- CONFIGURATION FICHIERS ---
@@ -418,5 +437,6 @@ with tab3:
                 "Statut": st.column_config.TextColumn("Statut Réf. 📌")
             }
         )
+
 
 
