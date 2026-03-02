@@ -20,14 +20,17 @@ def check_password():
 
     if not st.session_state["password_correct"]:
         st.markdown("<h2 style='text-align: center; color: #ecf0f1; font-family: Cinzel, serif;'>🔒 Accès Sécurisé - Code Albion</h2>", unsafe_allow_html=True)
-        pwd = st.text_input("Mot de passe", type="password")
-        if st.button("Valider"):
-            # Remplace "Albion2024!" par le mot de passe de ton choix, ou utilise st.secrets
-            if pwd == st.secrets.get("app_password", "Albion2024!"): 
-                st.session_state["password_correct"] = True
-                st.rerun()
-            else:
-                st.error("❌ Mot de passe incorrect")
+        
+        with st.form("login_form"):
+            pwd = st.text_input("Mot de passe", type="password")
+            submit = st.form_submit_button("Valider")
+            
+            if submit:
+                if pwd == st.secrets.get("app_password", "Albion2024!"): 
+                    st.session_state["password_correct"] = True
+                    st.rerun()
+                else:
+                    st.error("❌ Mot de passe incorrect")
         return False
     return True
 
@@ -57,14 +60,11 @@ st.markdown("""
     .txt-red { color: #ff6b6b; }
     .val-pos { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.4); } 
     .val-neg { color: #ff6b6b; text-shadow: 0 0 15px rgba(255, 107, 107, 0.5); } 
-    .plot-card { background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.2) 100%); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; padding: 15px; text-align: center; margin-bottom: 10px; }
-    .plot-title { font-family: 'Cinzel', serif; color: #f39c12; font-size: 0.9em; text-transform: uppercase; font-weight: bold; }
-    .plot-value { font-family: 'Roboto', sans-serif; font-size: 1.2em; font-weight: 700; margin-top: 5px; }
+    .plot-card { background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.2) 100%); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; padding: 20px; text-align: center; margin-bottom: 15px; }
+    .plot-title { font-family: 'Cinzel', serif; color: #f39c12; font-size: 1.2em; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; }
+    .plot-value { font-family: 'Roboto', sans-serif; font-size: 1.6em; font-weight: 700; margin-top: 10px; }
     .archived-plot { opacity: 0.6; filter: grayscale(50%); border-color: rgba(255,255,255,0.05); }
     .archived-plot:hover { opacity: 1; filter: grayscale(0%); }
-    .family-label { background: linear-gradient(90deg, rgba(243, 156, 18, 0.2) 0%, rgba(0,0,0,0.2) 100%); border-left: 5px solid #f39c12; padding: 10px 20px; border-radius: 8px; margin-top: 25px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
-    .family-name { font-family: 'Cinzel', serif; font-size: 1.3em; font-weight: bold; color: #ecf0f1; letter-spacing: 1px;}
-    .family-total { font-size: 1.3em; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -194,7 +194,6 @@ with tab1:
                     st.warning("Nom invalide ou déjà utilisé. Utilisez un nom unique (ex: Tissu 2).")
 
         with st.expander("🔴 Clôturer / Vendre un plot", expanded=False):
-            st.write("Retire un plot de la liste active et archive ses bénéfices.")
             plot_a_fermer = st.selectbox("Plot à clôturer", plots_actifs)
             prix_revente = st.number_input("Prix de revente / récupération (Silver)", step=1000000, format="%d", min_value=0, value=0)
             if st.button("Confirmer la clôture", use_container_width=True):
@@ -264,42 +263,34 @@ with tab2:
 
             st.divider()
 
-            # --- PLOTS ACTIFS AVEC ÉTIQUETTES CLASSIQUES ---
-            st.markdown(f"<h4 class='albion-font'>🟢 Bilan des Plots Actifs (Par Famille)</h4>", unsafe_allow_html=True)
-            stats_plots = df_filtre.groupby('Plot')['Reel'].sum()
+            # --- PLOTS ACTIFS CONSOLIDÉS PAR FAMILLE ---
+            st.markdown(f"<h4 class='albion-font'>🟢 Bilan Consolidé par Famille</h4>", unsafe_allow_html=True)
             
-            plots_with_typo = []
-            for plot_name in plots_actifs + ["Taxe Guilde", "Autre"]:
-                valeur = stats_plots.get(plot_name, 0)
-                if valeur != 0 or plot_name in plots_actifs:
-                    plots_with_typo.append({"nom": plot_name, "valeur": valeur, "typo": get_typology(plot_name)})
+            # Préparation des données par famille
+            df_filtre_family = df_filtre.copy()
+            df_filtre_family['Famille'] = df_filtre_family['Plot'].apply(get_typology)
             
-            df_plots = pd.DataFrame(plots_with_typo)
+            # On ne garde que les transactions des plots actuellement actifs ou des frais divers
+            plots_autorises = plots_actifs + ["Taxe Guilde", "Autre"]
+            df_filtre_actifs = df_filtre_family[df_filtre_family['Plot'].isin(plots_autorises)]
             
-            if not df_plots.empty:
-                for typo, group in df_plots.groupby('typo'):
-                    subtotal = group['valeur'].sum()
-                    sub_class = "val-pos" if subtotal >= 0 else "val-neg"
-                    
-                    # L'étiquette de la famille
-                    st.markdown(f"""
-                    <div class="family-label">
-                        <span class="family-name">🏷️ FAMILLE : {typo}</span>
-                        <span class="family-total {sub_class}">{format_nombre_entier(subtotal)} <span style="font-size:0.6em; color:#bdc3c7;">Silver</span></span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Les plots juste en dessous
-                    cols = st.columns(4)
-                    for idx, row in enumerate(group.itertuples()):
-                        color_class = "val-pos" if row.valeur >= 0 else "val-neg"
-                        with cols[idx % 4]:
+            # Regroupement et somme
+            stats_familles = df_filtre_actifs.groupby('Famille')['Reel'].sum().reset_index()
+            
+            if not stats_familles.empty:
+                cols_fam = st.columns(3) # Affichage sur 3 colonnes pour des étiquettes plus larges
+                idx = 0
+                for row in stats_familles.itertuples():
+                    if row.Reel != 0 or row.Famille != "DIVERS":
+                        color_class = "val-pos" if row.Reel >= 0 else "val-neg"
+                        with cols_fam[idx % 3]:
                             st.markdown(f"""
                             <div class="plot-card">
-                                <div class="plot-title">{row.nom}</div>
-                                <div class="plot-value {color_class}">{format_nombre_entier(row.valeur)}</div>
+                                <div class="plot-title">{row.Famille}</div>
+                                <div class="plot-value {color_class}">{format_nombre_entier(row.Reel)}</div>
                             </div>
                             """, unsafe_allow_html=True)
+                        idx += 1
 
             st.divider()
             st.markdown("<h4 class='albion-font'>Historique Détaillé</h4>", unsafe_allow_html=True)
@@ -354,34 +345,20 @@ with tab3:
                 st.toast("Scan terminé !", icon="✅")
                 st.session_state['data_display'] = pd.DataFrame(resultats)
 
-    if save_ref_btn and st.session_state['data_display'] is not None and ws_ref:
-        try:
-            df_s = st.session_state['data_display'][['Pseudo', 'Craft Fame']]
-            ws_ref.clear()
-            ws_ref.update([df_s.columns.values.tolist()] + df_s.values.tolist())
-            st.toast("Base de référence mise à jour !", icon="💾")
-        except: pass
-
     if st.session_state['data_display'] is not None:
         df_res = st.session_state['data_display']
         
-        # --- ANALYSE DE LA PLACE (GUILDES / ALLIANCES) ---
-        st.markdown("#### 📊 Analyse de l'occupation")
-        col_g, col_a = st.columns(2)
-        
-        with col_g:
-            st.write("**Top Guildes présentes sur le plot :**")
-            guild_counts = df_res[df_res['Guilde'] != 'Aucune']['Guilde'].value_counts().reset_index()
-            guild_counts.columns = ['Guilde', 'Nombre de Joueurs']
-            st.dataframe(guild_counts, use_container_width=True)
+        # --- BOUTON D'ALERTE DOUBLON ---
+        top_guilds = df_res[df_res['Guilde'] != 'Aucune']['Guilde'].value_counts()
+        if not top_guilds.empty:
+            guilde_cible = top_guilds.index[0]
+            nb_joueurs = top_guilds.iloc[0]
             
-        with col_a:
-            st.write("**Top Alliances présentes sur le plot :**")
-            alliance_counts = df_res[df_res['Alliance'] != '-']['Alliance'].value_counts().reset_index()
-            alliance_counts.columns = ['Alliance', 'Nombre de Joueurs']
-            st.dataframe(alliance_counts, use_container_width=True)
+            if nb_joueurs > 1:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.button(f"🚨 DOUBLON À PURGER : {guilde_cible} ({nb_joueurs} joueurs)", type="primary", use_container_width=True)
+                st.markdown("<br>", unsafe_allow_html=True)
             
-        st.divider()
         st.markdown("#### 📋 Détail des joueurs")
         st.dataframe(
             df_res, 
@@ -390,7 +367,7 @@ with tab3:
             column_config={
                 "Guilde": st.column_config.TextColumn("Guilde 🛡️"),
                 "Alliance": st.column_config.TextColumn("Alliance ⚔️"),
-                "Occurrences": st.column_config.NumberColumn("Doublons 🔄", help="Combien de fois le joueur est collé"),
+                "Occurrences": st.column_config.NumberColumn("Doublons 🔄"),
                 "Statut": st.column_config.TextColumn("Statut Réf. 📌")
             }
         )
