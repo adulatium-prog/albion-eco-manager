@@ -18,7 +18,7 @@ est_connecte = st.session_state.get("password_correct", False)
 
 if est_connecte:
     # FOND SOMBRE : Pour les pages de l'app (opacité très forte pour bien lire les chiffres)
-    calque_fond = "linear-gradient(rgba(15, 12, 41, 0.7), rgba(36, 36, 62, 0.98))"
+    calque_fond = "linear-gradient(rgba(15, 12, 41, 0.95), rgba(36, 36, 62, 0.98))"
 else:
     # FOND CLAIR : Pour la page d'accueil (opacité légère pour profiter de l'image)
     calque_fond = "linear-gradient(rgba(15, 12, 41, 0.4), rgba(36, 36, 62, 0.7))"
@@ -99,7 +99,7 @@ def check_password():
             with st.form("login_form"):
                 pwd = st.text_input("🔑 Mot de passe d'accès", type="password")
                 st.markdown("<br>", unsafe_allow_html=True)
-                submit = st.form_submit_button("Entrer dans l'Empire", use_container_width=True)
+                submit = st.form_submit_button("A R I O N", use_container_width=True)
                 
                 if submit:
                     if pwd == st.secrets.get("app_password", "Albion2024!"): 
@@ -437,6 +437,7 @@ with tab3:
                 "Statut": st.column_config.TextColumn("Statut Réf. 📌")
             }
         )
+
 
 
 
