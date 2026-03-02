@@ -9,330 +9,255 @@ import json
 from datetime import datetime
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Albion Economy Manager", page_icon="⚔️", layout="wide")
+st.set_page_config(page_title="Arion Economy Manager", page_icon="⚔️", layout="wide")
 
+# --- SYSTÈME DE SÉCURITÉ (OBLIGATOIRE VIA SECRETS) ---
+st.sidebar.markdown("## 🔒 Accès Sécurisé")
+if "APP_PASSWORD" not in st.secrets:
+    st.error("❌ CONFIGURATION MANQUANTE : Ajoutez 'APP_PASSWORD' dans les Secrets de Streamlit.")
+    st.stop()
+
+mdp_saisi = st.sidebar.text_input("Mot de passe :", type="password")
+if mdp_saisi != st.secrets["APP_PASSWORD"]:
+    st.warning("⚠️ Veuillez entrer le mot de passe pour accéder au Dashboard.")
+    st.stop()
+
+# --- STYLES CSS COMPLET (DESIGN ALBION + ROBOTO) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@400;700&display=swap');
+    
     .stApp { background-image: linear-gradient(to right bottom, #0f0c29, #302b63, #24243e); color: #ecf0f1; font-family: 'Roboto', sans-serif; }
-    .stButton > button { background: linear-gradient(180deg, #d35400, #a04000); color: white; border: 1px solid #e67e22; border-radius: 20px; font-family: 'Cinzel', serif; font-weight: bold; text-transform: uppercase; padding: 10px 24px; transition: all 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-    .stButton > button:hover { background: linear-gradient(180deg, #e67e22, #d35400); transform: scale(1.05); box-shadow: 0 0 15px rgba(211, 84, 0, 0.6); }
-    h1, h2, h3, h4, .albion-font { font-family: 'Cinzel', serif !important; color: #ecf0f1 !important; text-shadow: 0 2px 4px rgba(0,0,0,0.5); font-weight: 700; }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; background-color: rgba(0, 0, 0, 0.2); padding: 10px; border-radius: 20px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; background-color: transparent; color: #bdc3c7; font-family: 'Cinzel', serif; border: none; }
-    .stTabs [aria-selected="true"] { background-color: rgba(255, 255, 255, 0.1); color: #ffffff; border-radius: 10px; font-weight: bold; }
-    .albion-metric-box { background: rgba(0, 0, 0, 0.3); padding: 20px; border-radius: 20px; border: 1px solid rgba(236, 240, 241, 0.3); text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.2); margin-bottom: 20px; }
-    .metric-label { color: #bdc3c7; font-family: 'Cinzel', serif; font-size: 1.2em; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 2px; }
-    .metric-value { font-family: 'Cinzel', serif; font-size: 3.5em; font-weight: bold; text-shadow: 0 0 20px rgba(255,255,255,0.1); }
-    .summary-card { padding: 15px; border-radius: 15px; text-align: center; border: 1px solid rgba(255,255,255,0.1); }
-    .sc-green { background: rgba(46, 204, 113, 0.1); border-color: rgba(46, 204, 113, 0.3); }
-    .sc-red { background: rgba(231, 76, 60, 0.1); border-color: rgba(231, 76, 60, 0.3); }
-    .sc-title { font-family: 'Cinzel', serif; font-size: 0.9em; opacity: 0.8; margin-bottom: 5px; }
-    .sc-val { font-family: 'Roboto', sans-serif; font-size: 1.4em; font-weight: bold; }
-    .txt-green { color: #2ecc71; }
-    .txt-red { color: #ff6b6b; }
-    .val-pos { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.4); } 
-    .val-neg { color: #ff6b6b; text-shadow: 0 0 15px rgba(255, 107, 107, 0.5); } 
-    .plot-card { background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.2) 100%); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; padding: 15px; text-align: center; margin-bottom: 10px; }
-    .plot-title { font-family: 'Cinzel', serif; color: #f39c12; font-size: 0.9em; text-transform: uppercase; font-weight: bold; }
-    .plot-value { font-family: 'Roboto', sans-serif; font-size: 1.2em; font-weight: 700; margin-top: 5px; }
-    .archived-plot { opacity: 0.6; filter: grayscale(50%); border-color: rgba(255,255,255,0.05); }
-    .archived-plot:hover { opacity: 1; filter: grayscale(0%); }
+    
+    h1, h2, h3, h4, .albion-font { 
+        font-family: 'Cinzel', serif !important; 
+        color: #f39c12 !important; 
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5); 
+        font-weight: 700; 
+        text-transform: uppercase;
+    }
+
+    /* Roboto pour les chiffres : évite la confusion sur le chiffre 1 */
+    .roboto-val { font-family: 'Roboto', sans-serif !important; font-weight: 700; }
+
+    .albion-metric-box { 
+        background: rgba(0, 0, 0, 0.4); 
+        padding: 30px; 
+        border-radius: 25px; 
+        border: 1px solid rgba(243, 156, 18, 0.3); 
+        text-align: center; 
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+        margin-bottom: 30px; 
+    }
+    
+    .metric-label { color: #bdc3c7; font-family: 'Cinzel', serif; font-size: 1.3em; letter-spacing: 2px; }
+    .metric-value { font-family: 'Roboto', sans-serif; font-size: 3.8em; font-weight: bold; margin-top: 10px; }
+
+    .plot-card {
+        background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.2) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 15px;
+        transition: all 0.3s ease;
+    }
+    .plot-card:hover { border-color: #f39c12; transform: translateY(-5px); box-shadow: 0 5px 15px rgba(243, 156, 18, 0.2); }
+
+    .label-sm { color: #bdc3c7; font-size: 0.8em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+    .txt-green { color: #2ecc71; text-shadow: 0 0 10px rgba(46, 204, 113, 0.3); }
+    .txt-red { color: #e74c3c; text-shadow: 0 0 10px rgba(231, 76, 60, 0.3); }
+
+    .stTabs [data-baseweb="tab-list"] { gap: 15px; background-color: rgba(0, 0, 0, 0.3); padding: 12px; border-radius: 25px; }
+    .stTabs [data-baseweb="tab"] { height: 50px; color: #bdc3c7; font-family: 'Cinzel', serif; }
+    .stTabs [aria-selected="true"] { background-color: rgba(243, 156, 18, 0.2); color: #f39c12; border-radius: 15px; }
+
+    .stButton > button { 
+        background: linear-gradient(180deg, #d35400, #a04000); 
+        color: white; border-radius: 25px; font-family: 'Cinzel';
+        border: 1px solid #e67e22; padding: 12px 30px; font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURATION FICHIERS ---
+# --- CONFIGURATION & CONNEXION ---
 NOM_DU_FICHIER_SHEET = "Arion Plot"
 NOM_ONGLET_JOURNAL = "Journal_App"
-NOM_ONGLET_REF = "Reference_Craft"
 
-# --- FONCTIONS UTILITAIRES ---
-def format_monetaire(valeur):
-    try: return "{:,.2f}".format(float(valeur)).replace(",", " ").replace(".", ",")
-    except: return str(valeur)
+def format_nombre(n):
+    return "{:,.0f}".format(n).replace(",", " ")
 
-def format_nombre_entier(valeur):
-    try: return "{:,.0f}".format(float(valeur)).replace(",", " ")
-    except: return str(valeur)
+# --- CHARGEMENT DATA AVEC CACHE ---
+@st.cache_data(ttl=60)
+def get_data():
+    try:
+        if "gcp_service_account" in st.secrets:
+            creds = json.loads(st.secrets["gcp_service_account"])
+            gc = gspread.service_account_from_dict(creds)
+        else:
+            gc = gspread.service_account(filename='service_account.json')
+        sh = gc.open(NOM_DU_FICHIER_SHEET)
+        ws = sh.worksheet(NOM_ONGLET_JOURNAL)
+        data = ws.get_all_records()
+        return pd.DataFrame(data), ws
+    except Exception as e:
+        st.error(f"❌ Erreur de connexion Google Sheets : {e}")
+        st.stop()
 
-# --- API ALBION ---
-def get_player_stats(pseudo):
+# --- API ALBION (FONCTION SCANNER) ---
+def get_player_info(pseudo):
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}", headers=headers)
+        url = f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={pseudo}"
+        resp = requests.get(url, headers=headers, timeout=5)
         if resp.status_code == 200:
             data = resp.json()
-            candidats = [p for p in data.get('players', []) if p['Name'].lower() == pseudo.lower()]
-            if not candidats: return {"Pseudo": pseudo, "Trouve": False}
-            meilleur_fame = -1
-            infos_meilleur = {}
-            for p in candidats[:3]:
-                try:
-                    r_det = requests.get(f"https://gameinfo-ams.albiononline.com/api/gameinfo/players/{p['Id']}", headers=headers)
-                    if r_det.status_code == 200:
-                        d = r_det.json()
-                        val_fame = d.get('LifetimeStatistics', {}).get('Crafting', {}).get('Total') or d.get('CraftFame') or 0
-                        if val_fame > meilleur_fame: meilleur_fame = val_fame; infos_meilleur = d
-                    time.sleep(0.05)
-                except: pass
-            if infos_meilleur:
-                return {
-                    "Pseudo": infos_meilleur.get('Name'), "Guilde": infos_meilleur.get('GuildName') or "Aucune",
-                    "Alliance": infos_meilleur.get('AllianceName') or "-", "AllianceTag": infos_meilleur.get('AllianceTag') or "",
-                    "Craft Fame": meilleur_fame, "Trouve": True
-                }
-        return {"Pseudo": pseudo, "Trouve": False}
-    except: return {"Pseudo": pseudo, "Trouve": False}
+            # On cherche le match exact
+            p_data = [p for p in data.get('players', []) if p['Name'].lower() == pseudo.lower()]
+            if p_data:
+                return {"Pseudo": p_data[0]['Name'], "Guilde": p_data[0]['GuildName'] or "-", "Fame": p_data[0].get('CraftFame', 0)}
+        return {"Pseudo": pseudo, "Guilde": "Inconnu", "Fame": 0}
+    except: return {"Pseudo": pseudo, "Guilde": "Erreur", "Fame": 0}
 
-# --- CONNEXION GOOGLE SHEETS ---
-try:
-    if os.path.exists('service_account.json'):
-        gc = gspread.service_account(filename='service_account.json')
-    else:
-        gc = gspread.service_account_from_dict(json.loads(st.secrets["gcp_service_account"].strip()))
-        
-    sh = gc.open(NOM_DU_FICHIER_SHEET)
-    worksheet = sh.worksheet(NOM_ONGLET_JOURNAL)
-    try: ws_ref = sh.worksheet(NOM_ONGLET_REF)
-    except: ws_ref = None
-except Exception as e: 
-    st.error(f"❌ Erreur connexion Google Sheets : {e}")
-    st.stop()
+# --- INITIALISATION ---
+df_raw, worksheet = get_data()
 
-# --- ANALYSE DES PLOTS (ACTIFS vs ARCHIVÉS) ---
-data_journal = worksheet.get_all_records()
-df_journal = pd.DataFrame(data_journal) if data_journal else pd.DataFrame(columns=['Date', 'Plot', 'Type', 'Montant', 'Note'])
+# Nettoyage
+def clean_money(val):
+    try: return float(str(val).replace(' ', '').replace(',', '.'))
+    except: return 0.0
 
-tous_les_plots = [p for p in df_journal['Plot'].unique() if str(p).strip() not in ["", "Taxe Guilde", "Autre"]]
-plots_clotures = df_journal[(df_journal['Type'] == 'Clôture') | (df_journal['Note'] == 'Clôture')]['Plot'].unique().tolist()
-plots_actifs = [p for p in tous_les_plots if p not in plots_clotures]
+df_raw['Reel'] = df_raw['Montant'].apply(clean_money)
+df_raw['Date_Obj'] = pd.to_datetime(df_raw['Date'], format='%d/%m/%Y', errors='coerce')
 
-if not plots_actifs:
-    plots_actifs = ["Premier Plot"]
+# --- DASHBOARD ---
+st.markdown("<h1 class='albion-font'>⚔️ Arion Economy Manager</h1>", unsafe_allow_html=True)
 
-# --- INTERFACE PRINCIPALE ---
-st.markdown("<h1>⚔️ Albion Economy Manager <span style='font-size:0.5em; color:#bdc3c7'>EU SERVER</span></h1>", unsafe_allow_html=True)
+tab1, tab2, tab3 = st.tabs(["✍️ Saisie & Parc", "⚖️ Trésorerie & Bilan Plot", "🔮 Scanner Arion"])
 
-tab1, tab2, tab3 = st.tabs(["✍️ Opérations & Parc", "⚖️ Trésorerie & Archives", "🔮 Scanner Arion"])
-
-# --- TAB 1 : SAISIE ET GESTION DU PARC ---
+# --- TAB 1 : OPÉRATIONS ---
 with tab1:
-    col_saisie, col_gestion = st.columns([2, 1], gap="large")
+    col_left, col_right = st.columns([2, 1], gap="large")
     
-    with col_saisie:
+    with col_left:
         st.markdown("<h3 class='albion-font'>Nouvelle Transaction 💰</h3>", unsafe_allow_html=True)
         with st.container(border=True):
-            options_cibles = plots_actifs + ["---", "Taxe Guilde", "Autre"]
-            nom_plot = st.selectbox("📍 Cible de l'opération :", options_cibles)
+            plots_actifs = sorted([p for p in df_raw['Plot'].unique() if p != ""])
+            nom_p = st.selectbox("📍 Plot cible :", plots_actifs)
+            type_op = st.radio("Nature :", ["Recette (+)", "Dépense (-)"], horizontal=True)
+            montant = st.number_input("Montant (Silver)", min_value=0, step=1000000)
+            note = st.text_input("Détails / Note")
             
-            type_op = st.radio("Type d'opération", ["Recette (+)", "Dépense (-)"], horizontal=True)
-            montant = st.number_input("Montant (Silver)", step=10000, format="%d", min_value=1)
-            note = st.text_input("Description (Optionnel)")
-            
-            if st.button("Valider la transaction", type="primary", use_container_width=True):
-                if nom_plot == "---":
-                    st.warning("Veuillez sélectionner une cible valide.")
-                else:
-                    try:
-                        worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), nom_plot, type_op, montant, note])
-                        st.success(f"✅ Transaction enregistrée pour {nom_plot} !")
-                        time.sleep(1) 
-                        st.rerun() 
-                    except Exception as e:
-                        st.error(f"Erreur d'écriture: {e}")
+            if st.button("Valider l'enregistrement", use_container_width=True):
+                val_finale = montant if "Recette" in type_op else -montant
+                worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), nom_p, type_op, val_finale, note])
+                st.success(f"✅ Enregistré pour {nom_p} !")
+                get_data.clear()
+                time.sleep(1)
+                st.rerun()
 
-    with col_gestion:
+    with col_right:
         st.markdown("<h3 class='albion-font'>Gestion du Parc 🏗️</h3>", unsafe_allow_html=True)
-        
-        with st.expander("🟢 Acheter / Ouvrir un nouveau plot", expanded=False):
-            nouveau_nom = st.text_input("Nom du plot (ex: Fibre Mars)")
-            cout_initial = st.number_input("Coût d'achat initial (Silver)", step=1000000, format="%d", min_value=0)
-            if st.button("Ouvrir ce plot", use_container_width=True):
-                if nouveau_nom and nouveau_nom not in tous_les_plots:
-                    try:
-                        worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), nouveau_nom, "Dépense (-)", cout_initial, "Ouverture"])
-                        st.success(f"Plot '{nouveau_nom}' créé !")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur: {e}")
-                else:
-                    st.warning("Nom invalide ou déjà utilisé. Utilisez un nom unique (ex: Tissu 2).")
+        with st.expander("🟢 Nouveau terrain"):
+            n_nom = st.text_input("Nom du plot")
+            n_cout = st.number_input("Coût achat", min_value=0)
+            if st.button("Ouvrir"):
+                worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), n_nom, "Dépense (-)", -n_cout, "Ouverture"])
+                get_data.clear(); st.rerun()
 
-        with st.expander("🔴 Clôturer / Vendre un plot", expanded=False):
-            st.write("Retire un plot de la liste active et archive ses bénéfices.")
-            plot_a_fermer = st.selectbox("Plot à clôturer", plots_actifs)
-            prix_revente = st.number_input("Prix de revente / récupération (Silver)", step=1000000, format="%d", min_value=0, value=0)
-            
-            if st.button("Confirmer la clôture", use_container_width=True):
-                if plot_a_fermer:
-                    try:
-                        worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), plot_a_fermer, "Recette (+)", prix_revente, "Clôture"])
-                        st.success(f"Le plot '{plot_a_fermer}' a été vendu/archivé !")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur: {e}")
-
-# --- TAB 2 : TRÉSORERIE & ARCHIVES ---
+# --- TAB 2 : LES CHIFFRES (TES 129M) ---
 with tab2:
-    st.markdown("<h3 class='albion-font'>État des Finances</h3>", unsafe_allow_html=True)
-    if not df_journal.empty:
-        def calc_reel(row):
-            t = str(row['Type']).lower()
-            m = float(row.get('Montant', 0))
-            if "dépense" in t: return -m
-            elif "recette" in t: return m
-            return 0
-            
-        df_journal['Reel'] = df_journal.apply(calc_reel, axis=1)
-        
-        df_journal['Date_Obj'] = pd.to_datetime(df_journal['Date'], format='%d/%m/%Y', errors='coerce')
-        df_journal['Date_Obj'] = df_journal['Date_Obj'].fillna(pd.to_datetime(df_journal['Date'].astype(str) + f"/{datetime.now().year}", format='%d/%m/%Y', errors='coerce'))
+    st.markdown("<h3 class='albion-font'>Bilan Financier par Cycle</h3>", unsafe_allow_html=True)
+    
+    # Filtres de dates
+    c1, c2, c3 = st.columns([2, 2, 1])
+    d_deb = c1.date_input("Depuis le", df_raw['Date_Obj'].min().date())
+    d_fin = c2.date_input("Jusqu'au", datetime.now().date())
+    if c3.button("🔄 Reset Global", use_container_width=True):
+        st.rerun()
 
-        # --- GESTION DES DATES TOTALES ---
-        # On calcule la date la plus ancienne du Google Sheet et la date du jour
-        min_date_globale = df_journal['Date_Obj'].min().date()
-        max_date_globale = max(df_journal['Date_Obj'].max().date(), datetime.today().date())
+    mask = (df_raw['Date_Obj'].dt.date >= d_deb) & (df_raw['Date_Obj'].dt.date <= d_fin)
+    df_f = df_raw.loc[mask]
 
-        # Initialisation par défaut sur le TOTAL complet
-        if 'date_debut' not in st.session_state:
-            st.session_state['date_debut'] = min_date_globale
-        if 'date_fin' not in st.session_state:
-            st.session_state['date_fin'] = max_date_globale
+    # Global
+    net_total = df_f['Reel'].sum()
+    st.markdown(f"""
+    <div class="albion-metric-box">
+        <div class="metric-label">TRÉSORERIE NETTE GLOBALE</div>
+        <div class="metric-value roboto-val" style="color:{'#2ecc71' if net_total >= 0 else '#e74c3c'};">
+            {format_nombre(net_total)} <span style="font-size:0.4em; color:#bdc3c7;">Silver</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        # Fonction pour le bouton "Afficher le Total"
-        def reset_dates_totales(d_min, d_max):
-            st.session_state['date_debut'] = d_min
-            st.session_state['date_fin'] = d_max
+    # DÉTAIL PAR PLOT (SÉPARATION DES RECETTES G7:G33)
+    st.markdown("<h4 class='albion-font'>📊 Performance par Plot</h4>", unsafe_allow_html=True)
+    
+    # On groupe pour isoler chaque plot et voir ses Revenus vs Dépenses
+    stats = df_f.groupby('Plot')['Reel'].agg([
+        ('Revenu', lambda x: x[x > 0].sum()),
+        ('Depense', lambda x: x[x < 0].sum()),
+        ('Solde', 'sum')
+    ]).reset_index()
 
-        # --- SÉLECTEUR DE CYCLE (UI) ---
-        st.markdown("<div style='background:rgba(255,255,255,0.05); padding:15px; border-radius:10px; margin-bottom:20px;'>", unsafe_allow_html=True)
-        st.write("#### 📅 Filtrer par date (Cycle)")
-        
-        col_d1, col_d2, col_btn = st.columns([2, 2, 1])
-        with col_d1: 
-            date_debut = st.date_input("Début", key="date_debut")
-        with col_d2: 
-            date_fin = st.date_input("Fin", key="date_fin")
-        with col_btn:
-            st.write("") # Espace pour s'aligner avec les champs de date
-            st.write("")
-            st.button("🔄 Afficher le Total", on_click=reset_dates_totales, args=(min_date_globale, max_date_globale), use_container_width=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # --- FILTRAGE ---
-        mask = (df_journal['Date_Obj'].dt.date >= date_debut) & (df_journal['Date_Obj'].dt.date <= date_fin)
-        df_filtre = df_journal.loc[mask]
-
-        if df_filtre.empty:
-            st.warning("Aucune transaction trouvée sur cette période.")
-        else:
-            total = df_filtre['Reel'].sum()
-            total_recettes = df_filtre[df_filtre['Reel'] > 0]['Reel'].sum()
-            total_depenses = df_filtre[df_filtre['Reel'] < 0]['Reel'].sum() 
-
-            css_class = "val-pos" if total >= 0 else "val-neg"
+    for _, row in stats.iterrows():
+        if row['Plot'] == "": continue
+        with st.container():
             st.markdown(f"""
-            <div class="albion-metric-box">
-                <div class="metric-label">TRÉSORERIE NETTE (PÉRIODE)</div>
-                <div class="metric-value {css_class}">{format_monetaire(total)} <span style="font-size:0.4em; vertical-align:middle; color:#bdc3c7;">Silver</span></div>
+            <div class="plot-card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="flex: 1.5;"><span class="albion-font" style="font-size:1.4em;">{row['Plot']}</span></div>
+                    <div style="flex: 1; text-align:center;">
+                        <div class="label-sm">Recettes (+)</div>
+                        <div class="roboto-val txt-green">+{format_nombre(row['Revenu'])}</div>
+                    </div>
+                    <div style="flex: 1; text-align:center;">
+                        <div class="label-sm">Dépenses (-)</div>
+                        <div class="roboto-val txt-red">{format_nombre(row['Depense'])}</div>
+                    </div>
+                    <div style="flex: 1.5; text-align:right;">
+                        <div class="label-sm">Bénéfice Net</div>
+                        <div class="roboto-val" style="font-size:1.6em; color:{'#2ecc71' if row['Solde'] >= 0 else '#e74c3c'};">
+                            {format_nombre(row['Solde'])}
+                        </div>
+                    </div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
-            
-            c_gains, c_pertes = st.columns(2)
-            with c_gains:
-                st.markdown(f'<div class="summary-card sc-green"><div class="sc-title">RECETTES (+)</div><div class="sc-val txt-green">+{format_monetaire(total_recettes)}</div></div>', unsafe_allow_html=True)
-            with c_pertes:
-                st.markdown(f'<div class="summary-card sc-red"><div class="sc-title">DÉPENSES & ACHATS (-)</div><div class="sc-val txt-red">{format_monetaire(total_depenses)}</div></div>', unsafe_allow_html=True)
 
-            st.divider()
-
-            # --- PLOTS ACTIFS ---
-            st.markdown(f"<h4 class='albion-font'>🟢 Bilan des Plots Actifs</h4>", unsafe_allow_html=True)
-            stats_plots = df_filtre.groupby('Plot')['Reel'].sum()
-            
-            cols = st.columns(4)
-            idx_actif = 0
-            for plot_name in plots_actifs + ["Taxe Guilde", "Autre"]:
-                valeur = stats_plots.get(plot_name, 0)
-                if valeur != 0 or plot_name in plots_actifs:
-                    color_class = "val-pos" if valeur >= 0 else "val-neg"
-                    with cols[idx_actif % 4]:
-                        st.markdown(f"""
-                        <div class="plot-card">
-                            <div class="plot-title">{plot_name}</div>
-                            <div class="plot-value {color_class}">{format_nombre_entier(valeur)}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    idx_actif += 1
-
-            # --- ARCHIVES (PLOTS CLÔTURÉS) ---
-            if plots_clotures:
-                st.markdown("<br><h4 class='albion-font' style='color:#7f8c8d !important;'>🔴 Archives (Plots Clôturés)</h4>", unsafe_allow_html=True)
-                cols_arch = st.columns(5)
-                idx_arch = 0
-                for plot_name in plots_clotures:
-                    valeur = stats_plots.get(plot_name, 0)
-                    if valeur != 0: 
-                        color_class = "val-pos" if valeur >= 0 else "val-neg"
-                        with cols_arch[idx_arch % 5]:
-                            st.markdown(f"""
-                            <div class="plot-card archived-plot">
-                                <div class="plot-title" style="color:#bdc3c7;">{plot_name}</div>
-                                <div class="plot-value {color_class}">{format_nombre_entier(valeur)}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        idx_arch += 1
-
-            st.divider()
-            st.markdown("<h4 class='albion-font'>Historique Détaillé</h4>", unsafe_allow_html=True)
-            df_display = df_filtre.sort_values(by='Date_Obj', ascending=False).copy()
-            st.dataframe(df_display[['Date', 'Plot', 'Type', 'Montant', 'Note']], use_container_width=True, column_config={"Montant": st.column_config.NumberColumn(format="%d 💰")})
-
-    else:
-        st.warning("Le livre de comptes est vide.")
-
-# --- TAB 3 : ARION SCANNER ---
+# --- TAB 3 : SCANNER ARION ---
 with tab3:
-    st.markdown("<h3 class='albion-font'>Scanner de Guildes</h3>", unsafe_allow_html=True)
-    col_input, col_action = st.columns([3, 1], gap="medium")
-    with col_input:
-        if 'json_input' not in st.session_state: st.session_state['json_input'] = ""
-        raw_text = st.text_area("Permissions JSON/Texte", value=st.session_state['json_input'], height=200)
-    with col_action:
-        st.write("### Actions")
-        scan_btn = st.button("Lancer l'Analyse", type="primary", use_container_width=True)
-        st.write("")
-        save_ref_btn = st.button("Sauvegarder la référence", use_container_width=True)
+    st.markdown("<h3 class='albion-font'>🔮 Scanner de Crafters Arion</h3>", unsafe_allow_html=True)
+    col_in, col_opt = st.columns([3, 1])
+    
+    with col_in:
+        raw_input = st.text_area("Collez le JSON des permissions ou le texte brut ici :", height=250)
+    
+    with col_opt:
+        st.write("### Options")
+        lancer_scan = st.button("Lancer l'Analyse API", type="primary", use_container_width=True)
+        if st.button("Effacer tout"):
+            st.rerun()
 
-    if 'data_display' not in st.session_state: st.session_state['data_display'] = None
+    if lancer_scan and raw_input:
+        # Regex pour extraire les pseudos
+        players = list(set(re.findall(r'"Player:([^"]+)"', raw_input)))
+        if not players:
+            st.warning("⚠️ Aucun pseudo détecté. Vérifiez le format (Player:Pseudo).")
+        else:
+            st.info(f"🔎 Analyse de {len(players)} joueurs via l'API Albion...")
+            resultats = []
+            progress_bar = st.progress(0)
+            
+            for idx, p_name in enumerate(players):
+                info = get_player_info(p_name)
+                resultats.append(info)
+                progress_bar.progress((idx + 1) / len(players))
+                time.sleep(0.1) # Respecter l'API
 
-    if scan_btn and raw_text:
-        with st.spinner("Consultation des archives..."):
-            raw_players = list(set(re.findall(r'"Player:([^"]+)"', raw_text)))
-            if not raw_players: st.warning("Aucun joueur trouvé.")
-            else:
-                resultats = []
-                barre = st.progress(0)
-                for i, p_name in enumerate(raw_players):
-                    infos = get_player_stats(p_name)
-                    infos['Analyse'] = "Scanné"
-                    resultats.append(infos)
-                    barre.progress((i+1)/len(raw_players))
-                    time.sleep(0.05)
-                barre.empty()
-                st.toast("Scan terminé !", icon="✅")
-                df_res = pd.DataFrame(resultats)
-                st.session_state['data_display'] = df_res
+            df_scan = pd.DataFrame(resultats)
+            st.dataframe(df_scan, use_container_width=True, height=500)
+            st.success("✅ Scan terminé avec succès.")
 
-    if save_ref_btn and st.session_state['data_display'] is not None and ws_ref:
-        try:
-            df_s = st.session_state['data_display'][['Pseudo', 'Craft Fame']]
-            ws_ref.clear(); ws_ref.update([df_s.columns.values.tolist()] + df_s.values.tolist())
-            st.toast("Base de référence mise à jour !", icon="💾")
-        except: pass
-
-    if st.session_state['data_display'] is not None:
-        st.dataframe(st.session_state['data_display'], use_container_width=True, height=500)
+# HISTORIQUE COMPLET
+with st.expander("📑 Consulter le Journal_App (Source)"):
+    st.dataframe(df_raw[['Date', 'Plot', 'Type', 'Montant', 'Note']].sort_values('Date', ascending=False), use_container_width=True)
