@@ -7,6 +7,7 @@ import time
 import re
 import json
 from datetime import datetime
+from collections import Counter
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Albion Economy Manager", page_icon="⚔️", layout="wide")
@@ -38,6 +39,7 @@ st.markdown("""
     .plot-value { font-family: 'Roboto', sans-serif; font-size: 1.2em; font-weight: 700; margin-top: 5px; }
     .archived-plot { opacity: 0.6; filter: grayscale(50%); border-color: rgba(255,255,255,0.05); }
     .archived-plot:hover { opacity: 1; filter: grayscale(0%); }
+    .typo-header { color: #ecf0f1; font-family: 'Cinzel', serif; font-size: 1.2em; margin-top: 20px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px; margin-bottom: 15px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -54,6 +56,11 @@ def format_monetaire(valeur):
 def format_nombre_entier(valeur):
     try: return "{:,.0f}".format(float(valeur)).replace(",", " ")
     except: return str(valeur)
+
+def get_typology(name):
+    if name in ["Taxe Guilde", "Autre"]: return "DIVERS"
+    base = re.sub(r'[\d\s]+$', '', str(name)).strip().upper()
+    return base if base else "INCONNU"
 
 # --- API ALBION ---
 def get_player_stats(pseudo):
@@ -72,14 +79,19 @@ def get_player_stats(pseudo):
                     if r_det.status_code == 200:
                         d = r_det.json()
                         val_fame = d.get('LifetimeStatistics', {}).get('Crafting', {}).get('Total') or d.get('CraftFame') or 0
-                        if val_fame > meilleur_fame: meilleur_fame = val_fame; infos_meilleur = d
+                        if val_fame > meilleur_fame: 
+                            meilleur_fame = val_fame
+                            infos_meilleur = d
                     time.sleep(0.05)
                 except: pass
             if infos_meilleur:
                 return {
-                    "Pseudo": infos_meilleur.get('Name'), "Guilde": infos_meilleur.get('GuildName') or "Aucune",
-                    "Alliance": infos_meilleur.get('AllianceName') or "-", "AllianceTag": infos_meilleur.get('AllianceTag') or "",
-                    "Craft Fame": meilleur_fame, "Trouve": True
+                    "Pseudo": infos_meilleur.get('Name'), 
+                    "Guilde": infos_meilleur.get('GuildName') or "Aucune",
+                    "Alliance": infos_meilleur.get('AllianceName') or "-", 
+                    "AllianceTag": infos_meilleur.get('AllianceTag') or "",
+                    "Craft Fame": meilleur_fame, 
+                    "Trouve": True
                 }
         return {"Pseudo": pseudo, "Trouve": False}
     except: return {"Pseudo": pseudo, "Trouve": False}
@@ -186,43 +198,32 @@ with tab2:
             return 0
             
         df_journal['Reel'] = df_journal.apply(calc_reel, axis=1)
-        
         df_journal['Date_Obj'] = pd.to_datetime(df_journal['Date'], format='%d/%m/%Y', errors='coerce')
         df_journal['Date_Obj'] = df_journal['Date_Obj'].fillna(pd.to_datetime(df_journal['Date'].astype(str) + f"/{datetime.now().year}", format='%d/%m/%Y', errors='coerce'))
 
-        # --- GESTION DES DATES TOTALES ---
-        # On calcule la date la plus ancienne du Google Sheet et la date du jour
         min_date_globale = df_journal['Date_Obj'].min().date()
         max_date_globale = max(df_journal['Date_Obj'].max().date(), datetime.today().date())
 
-        # Initialisation par défaut sur le TOTAL complet
-        if 'date_debut' not in st.session_state:
-            st.session_state['date_debut'] = min_date_globale
-        if 'date_fin' not in st.session_state:
-            st.session_state['date_fin'] = max_date_globale
+        if 'date_debut' not in st.session_state: st.session_state['date_debut'] = min_date_globale
+        if 'date_fin' not in st.session_state: st.session_state['date_fin'] = max_date_globale
 
-        # Fonction pour le bouton "Afficher le Total"
         def reset_dates_totales(d_min, d_max):
             st.session_state['date_debut'] = d_min
             st.session_state['date_fin'] = d_max
 
-        # --- SÉLECTEUR DE CYCLE (UI) ---
         st.markdown("<div style='background:rgba(255,255,255,0.05); padding:15px; border-radius:10px; margin-bottom:20px;'>", unsafe_allow_html=True)
         st.write("#### 📅 Filtrer par date (Cycle)")
         
         col_d1, col_d2, col_btn = st.columns([2, 2, 1])
-        with col_d1: 
-            date_debut = st.date_input("Début", key="date_debut")
-        with col_d2: 
-            date_fin = st.date_input("Fin", key="date_fin")
+        with col_d1: date_debut = st.date_input("Début", key="date_debut")
+        with col_d2: date_fin = st.date_input("Fin", key="date_fin")
         with col_btn:
-            st.write("") # Espace pour s'aligner avec les champs de date
+            st.write("")
             st.write("")
             st.button("🔄 Afficher le Total", on_click=reset_dates_totales, args=(min_date_globale, max_date_globale), use_container_width=True)
             
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # --- FILTRAGE ---
         mask = (df_journal['Date_Obj'].dt.date >= date_debut) & (df_journal['Date_Obj'].dt.date <= date_fin)
         df_filtre = df_journal.loc[mask]
 
@@ -242,31 +243,40 @@ with tab2:
             """, unsafe_allow_html=True)
             
             c_gains, c_pertes = st.columns(2)
-            with c_gains:
-                st.markdown(f'<div class="summary-card sc-green"><div class="sc-title">RECETTES (+)</div><div class="sc-val txt-green">+{format_monetaire(total_recettes)}</div></div>', unsafe_allow_html=True)
-            with c_pertes:
-                st.markdown(f'<div class="summary-card sc-red"><div class="sc-title">DÉPENSES & ACHATS (-)</div><div class="sc-val txt-red">{format_monetaire(total_depenses)}</div></div>', unsafe_allow_html=True)
+            with c_gains: st.markdown(f'<div class="summary-card sc-green"><div class="sc-title">RECETTES (+)</div><div class="sc-val txt-green">+{format_monetaire(total_recettes)}</div></div>', unsafe_allow_html=True)
+            with c_pertes: st.markdown(f'<div class="summary-card sc-red"><div class="sc-title">DÉPENSES & ACHATS (-)</div><div class="sc-val txt-red">{format_monetaire(total_depenses)}</div></div>', unsafe_allow_html=True)
 
             st.divider()
 
-            # --- PLOTS ACTIFS ---
-            st.markdown(f"<h4 class='albion-font'>🟢 Bilan des Plots Actifs</h4>", unsafe_allow_html=True)
+            # --- PLOTS ACTIFS AVEC SOUS-TOTAUX ---
+            st.markdown(f"<h4 class='albion-font'>🟢 Bilan des Plots Actifs (Par Typologie)</h4>", unsafe_allow_html=True)
             stats_plots = df_filtre.groupby('Plot')['Reel'].sum()
             
-            cols = st.columns(4)
-            idx_actif = 0
+            plots_with_typo = []
             for plot_name in plots_actifs + ["Taxe Guilde", "Autre"]:
                 valeur = stats_plots.get(plot_name, 0)
                 if valeur != 0 or plot_name in plots_actifs:
-                    color_class = "val-pos" if valeur >= 0 else "val-neg"
-                    with cols[idx_actif % 4]:
-                        st.markdown(f"""
-                        <div class="plot-card">
-                            <div class="plot-title">{plot_name}</div>
-                            <div class="plot-value {color_class}">{format_nombre_entier(valeur)}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    idx_actif += 1
+                    plots_with_typo.append({"nom": plot_name, "valeur": valeur, "typo": get_typology(plot_name)})
+            
+            df_plots = pd.DataFrame(plots_with_typo)
+            
+            if not df_plots.empty:
+                # Tri des typologies pour un affichage propre
+                for typo, group in df_plots.groupby('typo'):
+                    subtotal = group['valeur'].sum()
+                    sub_class = "txt-green" if subtotal >= 0 else "txt-red"
+                    st.markdown(f"<div class='typo-header'>🔹 {typo} | Sous-total : <span class='{sub_class}'>{format_nombre_entier(subtotal)}</span></div>", unsafe_allow_html=True)
+                    
+                    cols = st.columns(4)
+                    for idx, row in enumerate(group.itertuples()):
+                        color_class = "val-pos" if row.valeur >= 0 else "val-neg"
+                        with cols[idx % 4]:
+                            st.markdown(f"""
+                            <div class="plot-card">
+                                <div class="plot-title">{row.nom}</div>
+                                <div class="plot-value {color_class}">{format_nombre_entier(row.valeur)}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
 
             # --- ARCHIVES (PLOTS CLÔTURÉS) ---
             if plots_clotures:
@@ -310,18 +320,37 @@ with tab3:
     if 'data_display' not in st.session_state: st.session_state['data_display'] = None
 
     if scan_btn and raw_text:
-        with st.spinner("Consultation des archives..."):
-            raw_players = list(set(re.findall(r'"Player:([^"]+)"', raw_text)))
-            if not raw_players: st.warning("Aucun joueur trouvé.")
+        with st.spinner("Consultation des archives et analyse des doublons..."):
+            # Extraction de tous les noms (avec doublons potentiels dans le texte brut)
+            raw_players_all = re.findall(r'"Player:([^"]+)"', raw_text)
+            counts = Counter([p.lower() for p in raw_players_all])
+            raw_players = list(set(raw_players_all)) # Noms uniques pour requêter l'API
+            
+            # Chargement de la référence pour repérer les nouveaux / anciens
+            ref_players = []
+            if ws_ref:
+                try:
+                    ref_data = ws_ref.get_all_records()
+                    ref_players = [str(r.get('Pseudo', '')).lower() for r in ref_data]
+                except: pass
+
+            if not raw_players: 
+                st.warning("Aucun joueur trouvé.")
             else:
                 resultats = []
                 barre = st.progress(0)
                 for i, p_name in enumerate(raw_players):
                     infos = get_player_stats(p_name)
-                    infos['Analyse'] = "Scanné"
+                    p_lower = str(infos.get('Pseudo', p_name)).lower()
+                    
+                    # Ajout des données d'analyse de la guilde/doublons
+                    infos['Occurrences'] = counts.get(p_lower, 1)
+                    infos['Statut'] = "✅ Déjà connu" if p_lower in ref_players else "🆕 Nouveau"
+                    
                     resultats.append(infos)
                     barre.progress((i+1)/len(raw_players))
                     time.sleep(0.05)
+                    
                 barre.empty()
                 st.toast("Scan terminé !", icon="✅")
                 df_res = pd.DataFrame(resultats)
@@ -330,9 +359,20 @@ with tab3:
     if save_ref_btn and st.session_state['data_display'] is not None and ws_ref:
         try:
             df_s = st.session_state['data_display'][['Pseudo', 'Craft Fame']]
-            ws_ref.clear(); ws_ref.update([df_s.columns.values.tolist()] + df_s.values.tolist())
+            ws_ref.clear()
+            ws_ref.update([df_s.columns.values.tolist()] + df_s.values.tolist())
             st.toast("Base de référence mise à jour !", icon="💾")
         except: pass
 
     if st.session_state['data_display'] is not None:
-        st.dataframe(st.session_state['data_display'], use_container_width=True, height=500)
+        st.dataframe(
+            st.session_state['data_display'], 
+            use_container_width=True, 
+            height=500,
+            column_config={
+                "Guilde": st.column_config.TextColumn("Guilde 🛡️"),
+                "Alliance": st.column_config.TextColumn("Alliance ⚔️"),
+                "Occurrences": st.column_config.NumberColumn("Doublons 🔄", help="Nombre de fois où ce joueur apparaît dans le texte collé"),
+                "Statut": st.column_config.TextColumn("Statut Réf. 📌", help="Compare avec les joueurs déjà sauvegardés dans Google Sheets")
+            }
+        )
