@@ -19,7 +19,7 @@ st.markdown("""
     
     /* Ajout du fond d'écran Albion avec un filtre sombre pour la lisibilité */
     .stApp { 
-        background-image: linear-gradient(rgba(15, 12, 41, 0.8), rgba(36, 36, 62, 0.9)), url('https://assets.albiononline.com/uploads/media/default/media/e16f315a6b07c870233ea2fb046cde6e85b0d00f.jpg'); 
+        background-image: linear-gradient(rgba(15, 12, 41, 0.8), rgba(36, 36, 62, 0.9)), url('https://albiononlinetools.com/assets/img/albionCrafting.jpg'); 
         background-size: cover; 
         background-position: center;
         background-attachment: fixed;
@@ -84,7 +84,7 @@ def check_password():
             with st.form("login_form"):
                 pwd = st.text_input("🔑 Mot de passe d'accès", type="password")
                 st.markdown("<br>", unsafe_allow_html=True)
-                submit = st.form_submit_button("Entrer dans l'Empire", use_container_width=True)
+                submit = st.form_submit_button("A R I O N", use_container_width=True)
                 
                 if submit:
                     if pwd == st.secrets.get("app_password", "Albion2024!"): 
@@ -418,4 +418,5 @@ with tab3:
                 "Statut": st.column_config.TextColumn("Statut Réf. 📌")
             }
         )
+
 
