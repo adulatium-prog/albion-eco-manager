@@ -244,56 +244,68 @@ with tab2:
         mask = (df_journal['Date_Obj'].dt.date >= date_debut) & (df_journal['Date_Obj'].dt.date <= date_fin)
         df_filtre = df_journal.loc[mask]
 
+        # On calcule les totaux globaux de la période filtrée
+        total = df_filtre['Reel'].sum() if not df_filtre.empty else 0
+        total_recettes = df_filtre[df_filtre['Reel'] > 0]['Reel'].sum() if not df_filtre.empty else 0
+        total_depenses = df_filtre[df_filtre['Reel'] < 0]['Reel'].sum() if not df_filtre.empty else 0
+
+        css_class = "val-pos" if total >= 0 else "val-neg"
+        st.markdown(f"""
+        <div class="albion-metric-box">
+            <div class="metric-label">TRÉSORERIE NETTE (PÉRIODE)</div>
+            <div class="metric-value {css_class}">{format_monetaire(total)} <span style="font-size:0.4em; vertical-align:middle; color:#bdc3c7;">Silver</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        c_gains, c_pertes = st.columns(2)
+        with c_gains: st.markdown(f'<div class="summary-card sc-green"><div class="sc-title">RECETTES (+)</div><div class="sc-val txt-green">+{format_monetaire(total_recettes)}</div></div>', unsafe_allow_html=True)
+        with c_pertes: st.markdown(f'<div class="summary-card sc-red"><div class="sc-title">DÉPENSES & ACHATS (-)</div><div class="sc-val txt-red">{format_monetaire(total_depenses)}</div></div>', unsafe_allow_html=True)
+
+        st.divider()
+
+        # --- PLOTS ACTIFS CONSOLIDÉS PAR FAMILLE ---
+        st.markdown(f"<h4 class='albion-font'>🟢 Bilan Consolidé par Famille</h4>", unsafe_allow_html=True)
+        
+        # On détermine TOUTES les familles actives depuis l'ensemble des plots actuels (même sans transactions récentes)
+        familles_actives = set([get_typology(p) for p in plots_actifs])
+        totaux_familles = {fam: 0 for fam in familles_actives}
+        totaux_familles["DIVERS"] = 0 
+        
+        # On ajoute les calculs basés sur la période filtrée
         if not df_filtre.empty:
-            total = df_filtre['Reel'].sum()
-            total_recettes = df_filtre[df_filtre['Reel'] > 0]['Reel'].sum()
-            total_depenses = df_filtre[df_filtre['Reel'] < 0]['Reel'].sum() 
-
-            css_class = "val-pos" if total >= 0 else "val-neg"
-            st.markdown(f"""
-            <div class="albion-metric-box">
-                <div class="metric-label">TRÉSORERIE NETTE (PÉRIODE)</div>
-                <div class="metric-value {css_class}">{format_monetaire(total)} <span style="font-size:0.4em; vertical-align:middle; color:#bdc3c7;">Silver</span></div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            c_gains, c_pertes = st.columns(2)
-            with c_gains: st.markdown(f'<div class="summary-card sc-green"><div class="sc-title">RECETTES (+)</div><div class="sc-val txt-green">+{format_monetaire(total_recettes)}</div></div>', unsafe_allow_html=True)
-            with c_pertes: st.markdown(f'<div class="summary-card sc-red"><div class="sc-title">DÉPENSES & ACHATS (-)</div><div class="sc-val txt-red">{format_monetaire(total_depenses)}</div></div>', unsafe_allow_html=True)
-
-            st.divider()
-
-            # --- PLOTS ACTIFS CONSOLIDÉS PAR FAMILLE ---
-            st.markdown(f"<h4 class='albion-font'>🟢 Bilan Consolidé par Famille</h4>", unsafe_allow_html=True)
-            
-            # Préparation des données par famille
             df_filtre_family = df_filtre.copy()
             df_filtre_family['Famille'] = df_filtre_family['Plot'].apply(get_typology)
             
-            # On ne garde que les transactions des plots actuellement actifs ou des frais divers
             plots_autorises = plots_actifs + ["Taxe Guilde", "Autre"]
             df_filtre_actifs = df_filtre_family[df_filtre_family['Plot'].isin(plots_autorises)]
             
-            # Regroupement et somme
-            stats_familles = df_filtre_actifs.groupby('Famille')['Reel'].sum().reset_index()
-            
-            if not stats_familles.empty:
-                cols_fam = st.columns(3) # Affichage sur 3 colonnes pour des étiquettes plus larges
-                idx = 0
-                for row in stats_familles.itertuples():
-                    if row.Reel != 0 or row.Famille != "DIVERS":
-                        color_class = "val-pos" if row.Reel >= 0 else "val-neg"
-                        with cols_fam[idx % 3]:
-                            st.markdown(f"""
-                            <div class="plot-card">
-                                <div class="plot-title">{row.Famille}</div>
-                                <div class="plot-value {color_class}">{format_nombre_entier(row.Reel)}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        idx += 1
+            stats_familles = df_filtre_actifs.groupby('Famille')['Reel'].sum()
+            for fam, val in stats_familles.items():
+                if fam in totaux_familles:
+                    totaux_familles[fam] += val
+                else:
+                    totaux_familles[fam] = val
+        
+        # Affichage : on trie par nom pour toujours avoir Weaver / Hunter dans un ordre logique
+        cols_fam = st.columns(3)
+        idx = 0
+        for fam in sorted(totaux_familles.keys()):
+            valeur = totaux_familles[fam]
+            # On affiche la famille sauf si c'est "DIVERS" à 0
+            if valeur != 0 or fam != "DIVERS":
+                color_class = "val-pos" if valeur >= 0 else "val-neg"
+                with cols_fam[idx % 3]:
+                    st.markdown(f"""
+                    <div class="plot-card">
+                        <div class="plot-title">{fam}</div>
+                        <div class="plot-value {color_class}">{format_nombre_entier(valeur)}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                idx += 1
 
-            st.divider()
-            st.markdown("<h4 class='albion-font'>Historique Détaillé</h4>", unsafe_allow_html=True)
+        st.divider()
+        st.markdown("<h4 class='albion-font'>Historique Détaillé</h4>", unsafe_allow_html=True)
+        if not df_filtre.empty:
             df_display = df_filtre.sort_values(by='Date_Obj', ascending=False).copy()
             st.dataframe(df_display[['Date', 'Plot', 'Type', 'Montant', 'Note']], use_container_width=True, column_config={"Montant": st.column_config.NumberColumn(format="%d 💰")})
 
