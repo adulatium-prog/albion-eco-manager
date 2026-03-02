@@ -12,36 +12,34 @@ from collections import Counter
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Albion Economy Manager", page_icon="⚔️", layout="wide")
 
-# --- SÉCURITÉ ---
-def check_password():
-    """Vérifie le mot de passe avant d'afficher l'app."""
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-
-    if not st.session_state["password_correct"]:
-        st.markdown("<h2 style='text-align: center; color: #ecf0f1; font-family: Cinzel, serif;'>🔒 Accès Sécurisé - Code Albion</h2>", unsafe_allow_html=True)
-        
-        with st.form("login_form"):
-            pwd = st.text_input("Mot de passe", type="password")
-            submit = st.form_submit_button("Valider")
-            
-            if submit:
-                if pwd == st.secrets.get("app_password", "Albion2024!"): 
-                    st.session_state["password_correct"] = True
-                    st.rerun()
-                else:
-                    st.error("❌ Mot de passe incorrect")
-        return False
-    return True
-
-if not check_password():
-    st.stop()
-
-# --- STYLE CSS ---
+# --- STYLE CSS (AVEC WALLPAPER) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@400;700&display=swap');
-    .stApp { background-image: linear-gradient(to right bottom, #0f0c29, #302b63, #24243e); color: #ecf0f1; font-family: 'Roboto', sans-serif; }
+    
+    /* Ajout du fond d'écran Albion avec un filtre sombre pour la lisibilité */
+    .stApp { 
+        background-image: linear-gradient(rgba(15, 12, 41, 0.8), rgba(36, 36, 62, 0.9)), url('https://assets.albiononline.com/uploads/media/default/media/e16f315a6b07c870233ea2fb046cde6e85b0d00f.jpg'); 
+        background-size: cover; 
+        background-position: center;
+        background-attachment: fixed;
+        color: #ecf0f1; 
+        font-family: 'Roboto', sans-serif; 
+    }
+    
+    /* Cacher la bordure en haut par défaut de Streamlit */
+    [data-testid="stHeader"] { background: transparent !important; }
+
+    /* Design effet Verre (Glassmorphism) pour le formulaire de connexion */
+    [data-testid="stForm"] {
+        background: rgba(20, 20, 30, 0.6) !important;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(243, 156, 18, 0.4) !important;
+        border-radius: 20px;
+        padding: 40px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+    }
+
     .stButton > button { background: linear-gradient(180deg, #d35400, #a04000); color: white; border: 1px solid #e67e22; border-radius: 20px; font-family: 'Cinzel', serif; font-weight: bold; text-transform: uppercase; padding: 10px 24px; transition: all 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
     .stButton > button:hover { background: linear-gradient(180deg, #e67e22, #d35400); transform: scale(1.05); box-shadow: 0 0 15px rgba(211, 84, 0, 0.6); }
     h1, h2, h3, h4, .albion-font { font-family: 'Cinzel', serif !important; color: #ecf0f1 !important; text-shadow: 0 2px 4px rgba(0,0,0,0.5); font-weight: 700; }
@@ -68,6 +66,42 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- SÉCURITÉ ET PAGE D'ACCUEIL ---
+def check_password():
+    """Vérifie le mot de passe avant d'afficher l'app."""
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    if not st.session_state["password_correct"]:
+        # Création de colonnes vides pour centrer la box de connexion
+        st.markdown("<br><br><br>", unsafe_allow_html=True) # Espace en haut
+        col1, col2, col3 = st.columns([1, 1.5, 1])
+        
+        with col2:
+            st.markdown("<h1 style='text-align: center; color: #f39c12; font-family: Cinzel, serif; font-size: 3em; text-shadow: 2px 2px 10px black;'>⚔️ Code Albion ⚔️</h1>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center; color: #bdc3c7; font-size: 1.2em; margin-bottom: 30px;'>Gestionnaire Économique & Scanner</p>", unsafe_allow_html=True)
+            
+            with st.form("login_form"):
+                pwd = st.text_input("🔑 Mot de passe d'accès", type="password")
+                st.markdown("<br>", unsafe_allow_html=True)
+                submit = st.form_submit_button("Entrer dans l'Empire", use_container_width=True)
+                
+                if submit:
+                    if pwd == st.secrets.get("app_password", "Albion2024!"): 
+                        st.session_state["password_correct"] = True
+                        st.rerun()
+                    else:
+                        st.error("❌ Mot de passe incorrect.")
+        return False
+    return True
+
+if not check_password():
+    st.stop()
+
+# --- LA SUITE DU CODE NE CHANGE PAS ---
+# --- CONFIGURATION FICHIERS ---
+# NOM_DU_FICHIER_SHEET = "Arion Plot"
+# etc...
 # --- CONFIGURATION FICHIERS ---
 NOM_DU_FICHIER_SHEET = "Arion Plot"
 NOM_ONGLET_JOURNAL = "Journal_App"
@@ -384,3 +418,4 @@ with tab3:
                 "Statut": st.column_config.TextColumn("Statut Réf. 📌")
             }
         )
+
