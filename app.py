@@ -26,50 +26,63 @@ if mdp_saisi != st.secrets["APP_PASSWORD"]:
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@400;700&display=swap');
+    
     .stApp { background-image: linear-gradient(to right bottom, #0f0c29, #302b63, #24243e); color: #ecf0f1; font-family: 'Roboto', sans-serif; }
-    .stButton > button { background: linear-gradient(180deg, #d35400, #a04000); color: white; border: 1px solid #e67e22; border-radius: 20px; font-family: 'Cinzel', serif; font-weight: bold; text-transform: uppercase; padding: 10px 24px; transition: all 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-    h1, h2, h3, h4, .albion-font { font-family: 'Cinzel', serif !important; color: #ecf0f1 !important; text-shadow: 0 2px 4px rgba(0,0,0,0.5); font-weight: 700; }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; background-color: rgba(0, 0, 0, 0.2); padding: 10px; border-radius: 20px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; background-color: transparent; color: #bdc3c7; font-family: 'Cinzel', serif; border: none; }
-    .stTabs [aria-selected="true"] { background-color: rgba(255, 255, 255, 0.1); color: #ffffff; border-radius: 10px; font-weight: bold; }
-    .albion-metric-box { background: rgba(0, 0, 0, 0.3); padding: 20px; border-radius: 20px; border: 1px solid rgba(236, 240, 241, 0.3); text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.2); margin-bottom: 20px; }
-    .metric-label { color: #bdc3c7; font-family: 'Cinzel', serif; font-size: 1.2em; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 2px; }
-    .metric-value { font-family: 'Roboto', sans-serif !important; font-size: 3.5em; font-weight: bold; text-shadow: 0 0 20px rgba(255,255,255,0.1); }
-    .summary-card { padding: 15px; border-radius: 15px; text-align: center; border: 1px solid rgba(255,255,255,0.1); }
-    .sc-green { background: rgba(46, 204, 113, 0.1); border-color: rgba(46, 204, 113, 0.3); }
-    .sc-red { background: rgba(231, 76, 60, 0.1); border-color: rgba(231, 76, 60, 0.3); }
-    .sc-title { font-family: 'Cinzel', serif; font-size: 0.9em; opacity: 0.8; margin-bottom: 5px; }
-    .sc-val { font-family: 'Roboto', sans-serif !important; font-size: 1.4em; font-weight: bold; }
-    .txt-green { color: #2ecc71; }
-    .txt-red { color: #ff6b6b; }
-    .val-pos { color: #2ecc71; text-shadow: 0 0 15px rgba(46, 204, 113, 0.4); } 
-    .val-neg { color: #ff6b6b; text-shadow: 0 0 15px rgba(255, 107, 107, 0.5); } 
-    .plot-card { background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.2) 100%); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; padding: 15px; text-align: center; margin-bottom: 10px; }
+    
+    .stButton > button { 
+        background: linear-gradient(180deg, #d35400, #a04000); 
+        color: white; border: 1px solid #e67e22; border-radius: 20px; 
+        font-family: 'Cinzel', serif; font-weight: bold; text-transform: uppercase; 
+        padding: 10px 24px; transition: all 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); 
+    }
+    
+    h1, h2, h3, h4, .albion-font { 
+        font-family: 'Cinzel', serif !important; 
+        color: #ecf0f1 !important; 
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5); font-weight: 700; 
+    }
+    
+    .metric-value, .plot-value, .sc-val { 
+        font-family: 'Roboto', sans-serif !important; 
+        font-weight: bold; 
+    }
+    
+    .albion-metric-box { 
+        background: rgba(0, 0, 0, 0.3); padding: 20px; border-radius: 20px; 
+        border: 1px solid rgba(236, 240, 241, 0.3); text-align: center; 
+        margin-bottom: 20px; 
+    }
+    
+    .metric-label { color: #bdc3c7; font-family: 'Cinzel', serif; font-size: 1.2em; text-transform: uppercase; }
+    .metric-value { font-size: 3.5em; text-shadow: 0 0 20px rgba(255,255,255,0.1); }
+    
+    .plot-card { 
+        background: rgba(255,255,255,0.05); border: 1px solid rgba(255, 255, 255, 0.1); 
+        border-radius: 15px; padding: 15px; text-align: center; margin-bottom: 10px; 
+    }
+    
     .plot-title { font-family: 'Cinzel', serif; color: #f39c12; font-size: 0.9em; text-transform: uppercase; font-weight: bold; }
-    .plot-value { font-family: 'Roboto', sans-serif !important; font-size: 1.2em; font-weight: 700; margin-top: 5px; }
-    .archived-plot { opacity: 0.6; filter: grayscale(50%); border-color: rgba(255,255,255,0.05); }
-    .archived-plot:hover { opacity: 1; filter: grayscale(0%); }
+    .plot-value { font-size: 1.2em; margin-top: 5px; }
+    
+    .val-pos { color: #2ecc71; } 
+    .val-neg { color: #ff6b6b; }
+    
+    .sc-title { font-family: 'Cinzel', serif; font-size: 0.9em; opacity: 0.8; margin-bottom: 5px; }
+    .summary-card { padding: 15px; border-radius: 15px; text-align: center; border: 1px solid rgba(255,255,255,0.1); }
 </style>
 """, unsafe_allow_html=True)
-
-# --- CONFIGURATION FICHIERS ---
-NOM_DU_FICHIER_SHEET = "Arion Plot"
-NOM_ONGLET_JOURNAL = "Journal_App"
-
-def format_monetaire(valeur):
-    try: return "{:,.0f}".format(float(valeur)).replace(",", " ")
-    except: return str(valeur)
 
 # --- CONNEXION & CACHE ---
 @st.cache_data(ttl=60)
 def get_data():
     try:
-        if os.path.exists('service_account.json'):
-            gc = gspread.service_account(filename='service_account.json')
+        if "gcp_service_account" in st.secrets:
+            creds = json.loads(st.secrets["gcp_service_account"])
+            gc = gspread.service_account_from_dict(creds)
         else:
-            gc = gspread.service_account_from_dict(json.loads(st.secrets["gcp_service_account"].strip()))
-        sh = gc.open(NOM_DU_FICHIER_SHEET)
-        ws = sh.worksheet(NOM_ONGLET_JOURNAL)
+            gc = gspread.service_account(filename='service_account.json')
+        sh = gc.open("Arion Plot")
+        ws = sh.worksheet("Journal_App")
         data = ws.get_all_records()
         return pd.DataFrame(data), ws
     except Exception as e:
@@ -84,10 +97,9 @@ def clean_money(val):
     except: return 0.0
 
 df_journal['Reel'] = df_journal['Montant'].apply(clean_money)
-# On crée la colonne Date_Obj pour le tri et les filtres
 df_journal['Date_Obj'] = pd.to_datetime(df_journal['Date'], format='%d/%m/%Y', errors='coerce')
 
-# --- ANALYSE DES PLOTS ---
+# Analyse des plots (Actifs vs Archivés)
 tous_les_plots = [p for p in df_journal['Plot'].unique() if str(p).strip() not in ["", "Taxe Guilde", "Autre"]]
 plots_clotures = df_journal[(df_journal['Type'] == 'Clôture') | (df_journal['Note'] == 'Clôture')]['Plot'].unique().tolist()
 plots_actifs = [p for p in tous_les_plots if p not in plots_clotures]
@@ -96,6 +108,7 @@ plots_actifs = [p for p in tous_les_plots if p not in plots_clotures]
 st.markdown("<h1>⚔️ Albion Economy Manager</h1>", unsafe_allow_html=True)
 tab1, tab2, tab3 = st.tabs(["✍️ Opérations & Parc", "⚖️ Trésorerie & Bilan", "🔮 Scanner Arion"])
 
+# --- TAB 1 : OPÉRATIONS & PARC ---
 with tab1:
     c1, c2 = st.columns([2, 1], gap="large")
     with c1:
@@ -104,11 +117,11 @@ with tab1:
             nom_p = st.selectbox("📍 Cible :", plots_actifs + ["Taxe Guilde", "Autre"])
             type_op = st.radio("Nature :", ["Recette (+)", "Dépense (-)"], horizontal=True)
             mnt = st.number_input("Montant (Silver)", min_value=0, step=1000000)
-            note = st.text_input("Note")
-            if st.button("Valider", use_container_width=True):
+            nt = st.text_input("Note")
+            if st.button("Enregistrer", use_container_width=True):
                 val_f = mnt if "Recette" in type_op else -mnt
-                worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), nom_p, type_op, val_f, note])
-                st.success("✅ Enregistré !")
+                worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), nom_p, type_op, val_f, nt])
+                st.success("✅ Transaction ajoutée !")
                 get_data.clear()
                 time.sleep(1)
                 st.rerun()
@@ -128,62 +141,77 @@ with tab1:
                 worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), p_v, "Recette (+)", p_r, "Clôture"])
                 get_data.clear(); st.rerun()
 
+# --- TAB 2 : TRÉSORERIE & BILAN ---
 with tab2:
-    st.markdown("<h3 class='albion-font'>Bilan Financier Global</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='albion-font'>Bilan Financier Détaillé</h3>", unsafe_allow_html=True)
     
-    # Filtres
-    c_d1, c_d2 = st.columns(2)
-    d_start = c_d1.date_input("Début", df_journal['Date_Obj'].min().date())
-    d_end = c_d2.date_input("Fin", datetime.now().date())
+    # Filtres de dates
+    col_d1, col_d2 = st.columns(2)
+    d_deb = col_d1.date_input("Début", df_journal['Date_Obj'].min().date())
+    d_fin = col_d2.date_input("Fin", datetime.now().date())
     
-    mask = (df_journal['Date_Obj'].dt.date >= d_start) & (df_journal['Date_Obj'].dt.date <= d_end)
+    mask = (df_journal['Date_Obj'].dt.date >= d_deb) & (df_journal['Date_Obj'].dt.date <= d_fin)
     df_f = df_journal.loc[mask]
 
-    net_total = df_f['Reel'].sum()
+    # Métrique Trésorerie Nette
+    total_net = df_f['Reel'].sum()
     st.markdown(f"""
     <div class="albion-metric-box">
-        <div class="metric-label">TRÉSORERIE NETTE</div>
-        <div class="metric-value {'val-pos' if net_total >= 0 else 'val-neg'}">
-            {format_monetaire(net_total)} Silver
+        <div class="metric-label">TRÉSORERIE NETTE (PÉRIODE)</div>
+        <div class="metric-value {'val-pos' if total_net >= 0 else 'val-neg'}">
+            {"{:,.0f}".format(total_net).replace(",", " ")} Silver
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Détail par plot
+    # Bilan par Plot (Les fameux chiffres Weaver)
     st.markdown("<h4 class='albion-font'>📊 Performance par Plot</h4>", unsafe_allow_html=True)
-    stats = df_f.groupby('Plot')['Reel'].sum()
+    stats_plots = df_f.groupby('Plot')['Reel'].sum()
+    
     cols = st.columns(4)
     for i, p_name in enumerate(tous_les_plots + ["Taxe Guilde", "Autre"]):
-        val = stats.get(p_name, 0)
-        if val != 0 or p_name in plots_actifs:
+        valeur = stats_plots.get(p_name, 0)
+        if valeur != 0 or p_name in plots_actifs:
             with cols[i % 4]:
                 st.markdown(f"""
                 <div class="plot-card">
                     <div class="plot-title">{p_name}</div>
-                    <div class="plot-value {'val-pos' if val >= 0 else 'val-neg'}">{format_monetaire(val)}</div>
+                    <div class="plot-value {'val-pos' if valeur >= 0 else 'val-neg'}">
+                        {"{:,.0f}".format(valeur).replace(",", " ")}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
     st.divider()
-    st.markdown("<h4 class='albion-font'>📑 Historique</h4>", unsafe_allow_html=True)
-    st.dataframe(df_f[['Date', 'Plot', 'Type', 'Montant', 'Note']].sort_values(by=df_f.index, ascending=False), use_container_width=True)
+    st.markdown("<h4 class='albion-font'>📑 Historique des Transactions</h4>", unsafe_allow_html=True)
+    # Tri robuste pour éviter KeyError
+    df_hist = df_f[['Date', 'Plot', 'Type', 'Montant', 'Note']].iloc[::-1]
+    st.dataframe(df_hist, use_container_width=True)
 
+# --- TAB 3 : SCANNER ARION ---
 with tab3:
-    st.markdown("<h3 class='albion-font'>🔮 Scanner Arion</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='albion-font'>🔮 Scanner de Guildes Arion</h3>", unsafe_allow_html=True)
     raw_tx = st.text_area("JSON / Texte brut", height=200)
-    if st.button("Lancer Scan", type="primary"):
+    if st.button("Lancer l'Analyse", type="primary"):
         players = list(set(re.findall(r'"Player:([^"]+)"', raw_tx)))
         if not players:
-            st.warning("Aucun pseudo trouvé.")
+            st.warning("Aucun joueur trouvé.")
         else:
-            res = []
+            res_list = []
             bar = st.progress(0)
-            for i, p in enumerate(players):
+            for idx, p_name in enumerate(players):
                 try:
-                    headers = {'User-Agent': 'Mozilla/5.0'}
-                    r = requests.get(f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={p}", headers=headers).json()
-                    p_dat = [x for x in r.get('players', []) if x['Name'].lower() == p.lower()][0]
-                    res.append({"Pseudo": p_dat['Name'], "Guilde": p_dat['GuildName'], "Alliance": p_dat['AllianceTag'], "Fame Craft": p_dat.get('CraftingFame', 0)})
-                except: res.append({"Pseudo": p, "Guilde": "Inconnu", "Alliance": "-", "Fame Craft": 0})
-                bar.progress((i+1)/len(players))
-            st.dataframe(pd.DataFrame(res), use_container_width=True)
+                    h = {'User-Agent': 'Mozilla/5.0'}
+                    r = requests.get(f"https://gameinfo-ams.albiononline.com/api/gameinfo/search?q={p_name}", headers=h).json()
+                    p_dat = [x for x in r.get('players', []) if x['Name'].lower() == p_name.lower()][0]
+                    res_list.append({
+                        "Pseudo": p_dat['Name'],
+                        "Guilde": p_dat.get('GuildName', '-'),
+                        "Alliance": p_dat.get('AllianceTag', '-'),
+                        "Fame Craft": p_dat.get('CraftingFame', 0)
+                    })
+                except:
+                    res_list.append({"Pseudo": p_name, "Guilde": "Inconnu", "Alliance": "-", "Fame Craft": 0})
+                bar.progress((idx+1)/len(players))
+                time.sleep(0.05)
+            st.dataframe(pd.DataFrame(res_list), use_container_width=True)
