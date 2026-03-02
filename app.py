@@ -41,6 +41,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- SÉCURITÉ ---
+if "APP_PASSWORD" in st.secrets:
+    if st.sidebar.text_input("🔒 Mot de passe", type="password") != st.secrets["APP_PASSWORD"]:
+        st.sidebar.warning("Saisissez le mot de passe pour accéder.")
+        st.stop()
+
 # --- CONFIGURATION FICHIERS ---
 NOM_DU_FICHIER_SHEET = "Arion Plot"
 NOM_ONGLET_JOURNAL = "Journal_App"
@@ -90,7 +96,6 @@ try:
         gc = gspread.service_account(filename='service_account.json')
     else:
         gc = gspread.service_account_from_dict(json.loads(st.secrets["gcp_service_account"].strip()))
-        
     sh = gc.open(NOM_DU_FICHIER_SHEET)
     worksheet = sh.worksheet(NOM_ONGLET_JOURNAL)
     try: ws_ref = sh.worksheet(NOM_ONGLET_REF)
@@ -99,9 +104,27 @@ except Exception as e:
     st.error(f"❌ Erreur connexion Google Sheets : {e}")
     st.stop()
 
-# --- ANALYSE DES PLOTS (ACTIFS vs ARCHIVÉS) ---
+# --- ANALYSE DES PLOTS ---
 data_journal = worksheet.get_all_records()
 df_journal = pd.DataFrame(data_journal) if data_journal else pd.DataFrame(columns=['Date', 'Plot', 'Type', 'Montant', 'Note'])
+
+# --- CALCUL DU RÉEL AVEC DÉTECTION DES DÉPENSES ---
+def calc_reel(row):
+    try:
+        t = str(row.get('Type', '')).lower()
+        n = str(row.get('Note', '')).lower()
+        m = float(row.get('Montant', 0))
+        # Détection Dépense, Ouverture ou Bid pour forcer le négatif
+        if "dépense" in t or "ouverture" in t or "bid" in n:
+            return -abs(m)
+        return abs(m)
+    except:
+        return 0.0
+
+if not df_journal.empty:
+    df_journal['Reel'] = df_journal.apply(calc_reel, axis=1)
+    df_journal['Date_Obj'] = pd.to_datetime(df_journal['Date'], format='%d/%m/%Y', errors='coerce')
+    df_journal['Date_Obj'] = df_journal['Date_Obj'].fillna(pd.to_datetime(df_journal['Date'].astype(str) + f"/{datetime.now().year}", format='%d/%m/%Y', errors='coerce'))
 
 tous_les_plots = [p for p in df_journal['Plot'].unique() if str(p).strip() not in ["", "Taxe Guilde", "Autre"]]
 plots_clotures = df_journal[(df_journal['Type'] == 'Clôture') | (df_journal['Note'] == 'Clôture')]['Plot'].unique().tolist()
@@ -115,20 +138,17 @@ st.markdown("<h1>⚔️ Albion Economy Manager <span style='font-size:0.5em; col
 
 tab1, tab2, tab3 = st.tabs(["✍️ Opérations & Parc", "⚖️ Trésorerie & Archives", "🔮 Scanner Arion"])
 
-# --- TAB 1 : SAISIE ET GESTION DU PARC ---
+# --- TAB 1 : SAISIE ---
 with tab1:
     col_saisie, col_gestion = st.columns([2, 1], gap="large")
-    
     with col_saisie:
         st.markdown("<h3 class='albion-font'>Nouvelle Transaction 💰</h3>", unsafe_allow_html=True)
         with st.container(border=True):
             options_cibles = plots_actifs + ["---", "Taxe Guilde", "Autre"]
             nom_plot = st.selectbox("📍 Cible de l'opération :", options_cibles)
-            
             type_op = st.radio("Type d'opération", ["Recette (+)", "Dépense (-)"], horizontal=True)
             montant = st.number_input("Montant (Silver)", step=10000, format="%d", min_value=1)
             note = st.text_input("Description (Optionnel)")
-            
             if st.button("Valider la transaction", type="primary", use_container_width=True):
                 if nom_plot == "---":
                     st.warning("Veuillez sélectionner une cible valide.")
@@ -143,196 +163,79 @@ with tab1:
 
     with col_gestion:
         st.markdown("<h3 class='albion-font'>Gestion du Parc 🏗️</h3>", unsafe_allow_html=True)
-        
         with st.expander("🟢 Acheter / Ouvrir un nouveau plot", expanded=False):
-            nouveau_nom = st.text_input("Nom du plot (ex: Fibre Mars)")
-            cout_initial = st.number_input("Coût d'achat initial (Silver)", step=1000000, format="%d", min_value=0)
+            nouveau_nom = st.text_input("Nom du plot")
+            cout_initial = st.number_input("Coût d'achat initial", step=1000000, format="%d", min_value=0)
             if st.button("Ouvrir ce plot", use_container_width=True):
                 if nouveau_nom and nouveau_nom not in tous_les_plots:
                     try:
                         worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), nouveau_nom, "Dépense (-)", cout_initial, "Ouverture"])
                         st.success(f"Plot '{nouveau_nom}' créé !")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur: {e}")
-                else:
-                    st.warning("Nom invalide ou déjà utilisé. Utilisez un nom unique (ex: Tissu 2).")
+                        time.sleep(1); st.rerun()
+                    except Exception as e: st.error(str(e))
 
-        with st.expander("🔴 Clôturer / Vendre un plot", expanded=False):
-            st.write("Retire un plot de la liste active et archive ses bénéfices.")
-            plot_a_fermer = st.selectbox("Plot à clôturer", plots_actifs)
-            prix_revente = st.number_input("Prix de revente / récupération (Silver)", step=1000000, format="%d", min_value=0, value=0)
-            
-            if st.button("Confirmer la clôture", use_container_width=True):
-                if plot_a_fermer:
-                    try:
-                        worksheet.append_row([datetime.now().strftime("%d/%m/%Y"), plot_a_fermer, "Recette (+)", prix_revente, "Clôture"])
-                        st.success(f"Le plot '{plot_a_fermer}' a été vendu/archivé !")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur: {e}")
-
-# --- TAB 2 : TRÉSORERIE & ARCHIVES ---
+# --- TAB 2 : TRÉSORERIE ---
 with tab2:
     st.markdown("<h3 class='albion-font'>État des Finances</h3>", unsafe_allow_html=True)
     if not df_journal.empty:
-        def calc_reel(row):
-            t = str(row['Type']).lower()
-            m = float(row.get('Montant', 0))
-            if "dépense" in t: return -m
-            elif "recette" in t: return m
-            return 0
-            
-        df_journal['Reel'] = df_journal.apply(calc_reel, axis=1)
-        
-        df_journal['Date_Obj'] = pd.to_datetime(df_journal['Date'], format='%d/%m/%Y', errors='coerce')
-        df_journal['Date_Obj'] = df_journal['Date_Obj'].fillna(pd.to_datetime(df_journal['Date'].astype(str) + f"/{datetime.now().year}", format='%d/%m/%Y', errors='coerce'))
-
-        # --- GESTION DES DATES TOTALES ---
-        # On calcule la date la plus ancienne du Google Sheet et la date du jour
         min_date_globale = df_journal['Date_Obj'].min().date()
-        max_date_globale = max(df_journal['Date_Obj'].max().date(), datetime.today().date())
-
-        # Initialisation par défaut sur le TOTAL complet
-        if 'date_debut' not in st.session_state:
-            st.session_state['date_debut'] = min_date_globale
-        if 'date_fin' not in st.session_state:
-            st.session_state['date_fin'] = max_date_globale
-
-        # Fonction pour le bouton "Afficher le Total"
-        def reset_dates_totales(d_min, d_max):
-            st.session_state['date_debut'] = d_min
-            st.session_state['date_fin'] = d_max
-
-        # --- SÉLECTEUR DE CYCLE (UI) ---
-        st.markdown("<div style='background:rgba(255,255,255,0.05); padding:15px; border-radius:10px; margin-bottom:20px;'>", unsafe_allow_html=True)
-        st.write("#### 📅 Filtrer par date (Cycle)")
+        max_date_globale = datetime.today().date()
         
-        col_d1, col_d2, col_btn = st.columns([2, 2, 1])
-        with col_d1: 
-            date_debut = st.date_input("Début", key="date_debut")
-        with col_d2: 
-            date_fin = st.date_input("Fin", key="date_fin")
-        with col_btn:
-            st.write("") # Espace pour s'aligner avec les champs de date
-            st.write("")
-            st.button("🔄 Afficher le Total", on_click=reset_dates_totales, args=(min_date_globale, max_date_globale), use_container_width=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True)
+        if 'date_debut' not in st.session_state: st.session_state['date_debut'] = min_date_globale
+        if 'date_fin' not in st.session_state: st.session_state['date_fin'] = max_date_globale
 
-        # --- FILTRAGE ---
+        col_d1, col_d2, col_btn = st.columns([2, 2, 1])
+        with col_d1: date_debut = st.date_input("Début", key="date_debut")
+        with col_d2: date_fin = st.date_input("Fin", key="date_fin")
+        with col_btn: 
+            st.write(""); st.write("")
+            if st.button("🔄 Total", use_container_width=True):
+                st.session_state['date_debut'] = min_date_globale
+                st.session_state['date_fin'] = max_date_globale
+                st.rerun()
+
         mask = (df_journal['Date_Obj'].dt.date >= date_debut) & (df_journal['Date_Obj'].dt.date <= date_fin)
         df_filtre = df_journal.loc[mask]
 
-        if df_filtre.empty:
-            st.warning("Aucune transaction trouvée sur cette période.")
-        else:
+        if not df_filtre.empty:
             total = df_filtre['Reel'].sum()
-            total_recettes = df_filtre[df_filtre['Reel'] > 0]['Reel'].sum()
-            total_depenses = df_filtre[df_filtre['Reel'] < 0]['Reel'].sum() 
+            total_rec = df_filtre[df_filtre['Reel'] > 0]['Reel'].sum()
+            total_dep = df_filtre[df_filtre['Reel'] < 0]['Reel'].sum()
 
-            css_class = "val-pos" if total >= 0 else "val-neg"
-            st.markdown(f"""
-            <div class="albion-metric-box">
-                <div class="metric-label">TRÉSORERIE NETTE (PÉRIODE)</div>
-                <div class="metric-value {css_class}">{format_monetaire(total)} <span style="font-size:0.4em; vertical-align:middle; color:#bdc3c7;">Silver</span></div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<div class="albion-metric-box"><div class="metric-label">TRÉSORERIE NETTE</div><div class="metric-value {"val-pos" if total >= 0 else "val-neg"}">{format_monetaire(total)} Silver</div></div>', unsafe_allow_html=True)
             
-            c_gains, c_pertes = st.columns(2)
-            with c_gains:
-                st.markdown(f'<div class="summary-card sc-green"><div class="sc-title">RECETTES (+)</div><div class="sc-val txt-green">+{format_monetaire(total_recettes)}</div></div>', unsafe_allow_html=True)
-            with c_pertes:
-                st.markdown(f'<div class="summary-card sc-red"><div class="sc-title">DÉPENSES & ACHATS (-)</div><div class="sc-val txt-red">{format_monetaire(total_depenses)}</div></div>', unsafe_allow_html=True)
+            c_g, c_p = st.columns(2)
+            c_g.markdown(f'<div class="summary-card sc-green"><div class="sc-title">RECETTES</div><div class="sc-val txt-green">+{format_monetaire(total_rec)}</div></div>', unsafe_allow_html=True)
+            c_p.markdown(f'<div class="summary-card sc-red"><div class="sc-title">DÉPENSES</div><div class="sc-val txt-red">{format_monetaire(total_dep)}</div></div>', unsafe_allow_html=True)
 
-            st.divider()
-
-            # --- PLOTS ACTIFS ---
-            st.markdown(f"<h4 class='albion-font'>🟢 Bilan des Plots Actifs</h4>", unsafe_allow_html=True)
-            stats_plots = df_filtre.groupby('Plot')['Reel'].sum()
-            
+            st.markdown("<h4 class='albion-font'>🟢 Plots Actifs</h4>", unsafe_allow_html=True)
+            stats_p = df_filtre.groupby('Plot')['Reel'].sum()
             cols = st.columns(4)
-            idx_actif = 0
-            for plot_name in plots_actifs + ["Taxe Guilde", "Autre"]:
-                valeur = stats_plots.get(plot_name, 0)
-                if valeur != 0 or plot_name in plots_actifs:
-                    color_class = "val-pos" if valeur >= 0 else "val-neg"
-                    with cols[idx_actif % 4]:
-                        st.markdown(f"""
-                        <div class="plot-card">
-                            <div class="plot-title">{plot_name}</div>
-                            <div class="plot-value {color_class}">{format_nombre_entier(valeur)}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    idx_actif += 1
-
-            # --- ARCHIVES (PLOTS CLÔTURÉS) ---
-            if plots_clotures:
-                st.markdown("<br><h4 class='albion-font' style='color:#7f8c8d !important;'>🔴 Archives (Plots Clôturés)</h4>", unsafe_allow_html=True)
-                cols_arch = st.columns(5)
-                idx_arch = 0
-                for plot_name in plots_clotures:
-                    valeur = stats_plots.get(plot_name, 0)
-                    if valeur != 0: 
-                        color_class = "val-pos" if valeur >= 0 else "val-neg"
-                        with cols_arch[idx_arch % 5]:
-                            st.markdown(f"""
-                            <div class="plot-card archived-plot">
-                                <div class="plot-title" style="color:#bdc3c7;">{plot_name}</div>
-                                <div class="plot-value {color_class}">{format_nombre_entier(valeur)}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        idx_arch += 1
+            for i, p_n in enumerate(plots_actifs + ["Taxe Guilde", "Autre"]):
+                val = stats_p.get(p_n, 0)
+                with cols[i % 4]:
+                    st.markdown(f'<div class="plot-card"><div class="plot-title">{p_n}</div><div class="plot-value {"val-pos" if val >= 0 else "val-neg"}">{format_nombre_entier(val)}</div></div>', unsafe_allow_html=True)
 
             st.divider()
-            st.markdown("<h4 class='albion-font'>Historique Détaillé</h4>", unsafe_allow_html=True)
-            df_display = df_filtre.sort_values(by='Date_Obj', ascending=False).copy()
-            st.dataframe(df_display[['Date', 'Plot', 'Type', 'Montant', 'Note']], use_container_width=True, column_config={"Montant": st.column_config.NumberColumn(format="%d 💰")})
+            # FIX KEYERROR : On utilise l'index pour trier si Date_Obj pose problème
+            df_hist = df_filtre.copy().sort_index(ascending=False)
+            st.dataframe(df_hist[['Date', 'Plot', 'Type', 'Montant', 'Note']], use_container_width=True)
 
-    else:
-        st.warning("Le livre de comptes est vide.")
-
-# --- TAB 3 : ARION SCANNER ---
+# --- TAB 3 : SCANNER ---
 with tab3:
     st.markdown("<h3 class='albion-font'>Scanner de Guildes</h3>", unsafe_allow_html=True)
-    col_input, col_action = st.columns([3, 1], gap="medium")
-    with col_input:
-        if 'json_input' not in st.session_state: st.session_state['json_input'] = ""
-        raw_text = st.text_area("Permissions JSON/Texte", value=st.session_state['json_input'], height=200)
-    with col_action:
-        st.write("### Actions")
-        scan_btn = st.button("Lancer l'Analyse", type="primary", use_container_width=True)
-        st.write("")
-        save_ref_btn = st.button("Sauvegarder la référence", use_container_width=True)
+    raw_text = st.text_area("Permissions JSON/Texte", height=200)
+    if st.button("Lancer l'Analyse", type="primary", use_container_width=True):
+        raw_players = list(set(re.findall(r'"Player:([^"]+)"', raw_text)))
+        if raw_players:
+            results = []
+            bar = st.progress(0)
+            for i, p_name in enumerate(raw_players):
+                infos = get_player_stats(p_name)
+                results.append(infos)
+                bar.progress((i+1)/len(raw_players))
+            st.session_state['data_display'] = pd.DataFrame(results)
+            st.rerun()
 
-    if 'data_display' not in st.session_state: st.session_state['data_display'] = None
-
-    if scan_btn and raw_text:
-        with st.spinner("Consultation des archives..."):
-            raw_players = list(set(re.findall(r'"Player:([^"]+)"', raw_text)))
-            if not raw_players: st.warning("Aucun joueur trouvé.")
-            else:
-                resultats = []
-                barre = st.progress(0)
-                for i, p_name in enumerate(raw_players):
-                    infos = get_player_stats(p_name)
-                    infos['Analyse'] = "Scanné"
-                    resultats.append(infos)
-                    barre.progress((i+1)/len(raw_players))
-                    time.sleep(0.05)
-                barre.empty()
-                st.toast("Scan terminé !", icon="✅")
-                df_res = pd.DataFrame(resultats)
-                st.session_state['data_display'] = df_res
-
-    if save_ref_btn and st.session_state['data_display'] is not None and ws_ref:
-        try:
-            df_s = st.session_state['data_display'][['Pseudo', 'Craft Fame']]
-            ws_ref.clear(); ws_ref.update([df_s.columns.values.tolist()] + df_s.values.tolist())
-            st.toast("Base de référence mise à jour !", icon="💾")
-        except: pass
-
-    if st.session_state['data_display'] is not None:
-        st.dataframe(st.session_state['data_display'], use_container_width=True, height=500)
+    if st.session_state.get('data_display') is not None:
+        st.dataframe(st.session_state['data_display'], use_container_width=True)
