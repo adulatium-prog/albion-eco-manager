@@ -263,12 +263,12 @@ with tab2:
 
         st.divider()
 
-        # --- PLOTS ACTIFS CONSOLIDÉS PAR FAMILLE ---
+        # --- PLOTS CONSOLIDÉS PAR FAMILLE (ACTIFS ET CLÔTURÉS INCLUS) ---
         st.markdown(f"<h4 class='albion-font'>🟢 Bilan Consolidé par Famille</h4>", unsafe_allow_html=True)
         
-        # On détermine TOUTES les familles actives depuis l'ensemble des plots actuels (même sans transactions récentes)
-        familles_actives = set([get_typology(p) for p in plots_actifs])
-        totaux_familles = {fam: 0 for fam in familles_actives}
+        # On détermine TOUTES les familles depuis l'ensemble des plots (actifs ET clôturés)
+        toutes_familles = set([get_typology(p) for p in tous_les_plots])
+        totaux_familles = {fam: 0 for fam in toutes_familles}
         totaux_familles["DIVERS"] = 0 
         
         # On ajoute les calculs basés sur la période filtrée
@@ -276,17 +276,18 @@ with tab2:
             df_filtre_family = df_filtre.copy()
             df_filtre_family['Famille'] = df_filtre_family['Plot'].apply(get_typology)
             
-            plots_autorises = plots_actifs + ["Taxe Guilde", "Autre"]
-            df_filtre_actifs = df_filtre_family[df_filtre_family['Plot'].isin(plots_autorises)]
+            # ICI : on autorise TOUS les plots pour que les clôturés remontent dans leur famille respective
+            plots_autorises = tous_les_plots + ["Taxe Guilde", "Autre"]
+            df_filtre_tous = df_filtre_family[df_filtre_family['Plot'].isin(plots_autorises)]
             
-            stats_familles = df_filtre_actifs.groupby('Famille')['Reel'].sum()
+            stats_familles = df_filtre_tous.groupby('Famille')['Reel'].sum()
             for fam, val in stats_familles.items():
                 if fam in totaux_familles:
                     totaux_familles[fam] += val
                 else:
                     totaux_familles[fam] = val
         
-        # Affichage : on trie par nom pour toujours avoir Weaver / Hunter dans un ordre logique
+        # Affichage : on trie par nom
         cols_fam = st.columns(3)
         idx = 0
         for fam in sorted(totaux_familles.keys()):
